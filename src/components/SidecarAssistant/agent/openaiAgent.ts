@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { getOpenAIClient, getOpenAIModel } from "../../../lib/openaiClient";
 import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -178,7 +178,11 @@ export type AgentAction =
   | { type: "suggest_nbas"; labels: string[] };
 
 export type OpenAIAgentDeps = {
-  apiKey: string;
+  /** Optional override for the chat model. Defaults to whatever
+   *  `getOpenAIModel()` resolves (env-driven, falling back to
+   *  gpt-4o-mini). The previously-required `apiKey` field has
+   *  been removed — keys are now injected by the proxy worker
+   *  in production, or by `lib/openaiClient` in dev. */
   model?: string;
   products: CatalogProduct[];
   getProductBySlug: (slug: string) => CatalogProduct | undefined;
@@ -896,12 +900,22 @@ function buildSystemPrompt(products: CatalogProduct[]): string {
 /* ---------- agent factory ---------- */
 
 export function createOpenAIAgent({
-  apiKey,
-  model = "gpt-4o-mini",
+  model,
   products,
   getProductBySlug,
 }: OpenAIAgentDeps): OpenAIAgent {
-  const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+  /* The shared client returns `null` only when neither a proxy URL
+   * nor a direct API key is configured. Callers gate `createOpenAIAgent`
+   * on `isLlmConfigured()` so reaching here without a client is a
+   * programmer error — throw eagerly so the caller's gate doesn't
+   * silently produce a broken agent. */
+  const client = getOpenAIClient();
+  if (!client) {
+    throw new Error(
+      "createOpenAIAgent: no LLM backend configured. Gate this call on isLlmConfigured() before invoking.",
+    );
+  }
+  const resolvedModel = model ?? getOpenAIModel();
   const systemPrompt = buildSystemPrompt(products);
   let history: ChatCompletionMessageParam[] = [];
 
@@ -1537,7 +1551,7 @@ export function createOpenAIAgent({
       iterations += 1;
 
       const completion = await client.chat.completions.create({
-        model,
+        model: resolvedModel,
         temperature: 0.4,
         messages: [
           { role: "system", content: systemPrompt },

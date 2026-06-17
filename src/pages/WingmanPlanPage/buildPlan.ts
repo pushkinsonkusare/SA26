@@ -863,7 +863,13 @@ function ensureWatersportCaseSlot(
 
 const HEADLINE_LEADING_PATTERNS: RegExp[] = [
   /^i\s+(want|need|would\s+like|hope)\s+to\s+/i,
-  /^i'?m\s+(looking\s+to|trying\s+to|going\s+to|planning\s+to)\s+/i,
+  /^i'?m\s+(looking\s+to|trying\s+to|going\s+to|planning\s+to|headed\s+to|off\s+to)\s+/i,
+  /* `i am` / `we are` / `we're` cases — mirror the contracted variants
+   * above. Without these, "I am going to yosemite next month" keeps
+   * its full leading clause and the heuristic returns a 12-word
+   * banner. */
+  /^i\s+am\s+(looking\s+to|trying\s+to|going\s+to|planning\s+to|headed\s+to|off\s+to)\s+/i,
+  /^we\s+(are|'re)\s+(looking\s+to|trying\s+to|going\s+to|planning\s+to|headed\s+to|off\s+to)\s+/i,
   /^help\s+me\s+(with\s+)?/i,
   /^show\s+me\s+/i,
   /^build\s+(me\s+)?/i,
@@ -875,7 +881,24 @@ const HEADLINE_LEADING_PATTERNS: RegExp[] = [
   /^what'?s\s+(the\s+)?(best|right)\s+(gear|kit|setup|equipment)\s+for\s+/i,
 ];
 
-const HEADLINE_MAX_LENGTH = 64;
+/* Trailing interrogative clauses that shoppers chain onto a context
+ * sentence ("…next month, what should I carry"). We strip these
+ * after the leading-verb pass so the heuristic returns the
+ * descriptive prefix rather than the question. Patterns are anchored
+ * to a clause boundary (start of string, comma, or period) so we
+ * never gobble an internal phrase that happens to contain "what". */
+const HEADLINE_TRAILING_INTERROGATIVES: RegExp[] = [
+  /[\s,;]+(what|which)\s+(should|do|gear|kit|equipment|stuff)\s+.*$/i,
+  /[\s,;]+(can\s+you|could\s+you)\s+(suggest|recommend|help)\s+.*$/i,
+  /[\s,;]+(any\s+)?(suggestions?|recommendations?|ideas?)\??\s*$/i,
+  /[\s,;]+(help|advice)\s+(needed|please)?\??\s*$/i,
+];
+
+/* 40 chars ≈ 6 words at typical English word lengths — matches the
+ * LLM headline target of 2-5 words so the fallback and the LLM
+ * upgrade feel consistent in size. The previous 64-char cap let
+ * the heuristic render two-clause sentences. */
+const HEADLINE_MAX_LENGTH = 40;
 
 export function shortenQuery(query: string): string {
   let working = query.trim();
@@ -895,6 +918,17 @@ export function shortenQuery(query: string): string {
       }
     }
     if (!matched) break;
+  }
+
+  /* Strip a trailing interrogative clause ("…what should I carry").
+   * Run before the punctuation tail strip so a comma or period before
+   * the question gets eaten with the question. */
+  for (const pattern of HEADLINE_TRAILING_INTERROGATIVES) {
+    const next = working.replace(pattern, "");
+    if (next !== working) {
+      working = next.trim();
+      break;
+    }
   }
 
   /* Drop a trailing punctuation tail; keep internal punctuation intact

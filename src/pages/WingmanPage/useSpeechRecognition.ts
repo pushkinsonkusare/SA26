@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import OpenAI from "openai";
+import { getOpenAIClient } from "../../lib/openaiClient";
 
 /**
  * Hybrid voice-to-text hook for the Wingman input.
@@ -19,7 +19,7 @@ import OpenAI from "openai";
  * Graceful degradation:
  *   - No SpeechRecognition (Firefox)        → record-only, Whisper drives everything
  *   - No MediaRecorder / getUserMedia       → SpeechRecognition only, no Whisper
- *   - No VITE_OPENAI_API_KEY                → SpeechRecognition only, no Whisper
+ *   - No proxy + no VITE_OPENAI_API_KEY     → SpeechRecognition only, no Whisper
  *   - Neither available                     → `isSupported: false`, mic disabled
  *
  * The hook never throws. All errors surface via the `error` field so the
@@ -50,13 +50,10 @@ const RECORDER_TIMESLICE_MS = 500;
  * subsequent ticks have fresh audio waiting without overlapping. */
 const LIVE_POLL_MS = 1500;
 
-const OPENAI_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY ?? "").trim();
-
 /* Hoisted singleton — creating an OpenAI client per request is
- * wasteful when we're firing one every 1.5s. Lazy-null when no key. */
-const openaiClient = OPENAI_API_KEY
-  ? new OpenAI({ apiKey: OPENAI_API_KEY, dangerouslyAllowBrowser: true })
-  : null;
+ * wasteful when we're firing one every 1.5s. Returns `null` when
+ * neither a proxy nor a direct key is configured. */
+const openaiClient = getOpenAIClient();
 
 export type SpeechRecognitionState =
   | "idle"
@@ -154,7 +151,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     typeof MediaRecorder !== "undefined" &&
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices?.getUserMedia;
-  const hasWhisper = hasMediaRecorder && !!OPENAI_API_KEY;
+  const hasWhisper = hasMediaRecorder && !!openaiClient;
   const isSupported = hasWebSpeech || hasMediaRecorder;
 
   const clearLivePoll = useCallback(() => {

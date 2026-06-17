@@ -46,10 +46,8 @@ import {
 import type { ChatMessage } from "./conversation/types";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { createOpenAIAgent, type AgentAction, type OpenAIAgent } from "./agent/openaiAgent";
+import { isLlmConfigured } from "../../lib/openaiClient";
 import "./SidecarAssistant.css";
-
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY?.trim();
-const OPENAI_MODEL = import.meta.env.VITE_OPENAI_MODEL?.trim() || "gpt-4o-mini";
 
 const PLACEHOLDER_INPUT =
   "Ask anything about DJI gear, orders, or recommendations…";
@@ -629,10 +627,8 @@ export function SidecarAssistant() {
   /* ---------- OpenAI agent (optional) ---------- */
 
   const agentRef = useRef<OpenAIAgent | null>(null);
-  if (agentRef.current === null && OPENAI_API_KEY) {
+  if (agentRef.current === null && isLlmConfigured()) {
     agentRef.current = createOpenAIAgent({
-      apiKey: OPENAI_API_KEY,
-      model: OPENAI_MODEL,
       products,
       getProductBySlug: (slug) => getProductBySlug(slug),
     });

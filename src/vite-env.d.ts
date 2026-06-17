@@ -8,6 +8,13 @@ declare module "*.csv?raw" {
 interface ImportMetaEnv {
   readonly VITE_OPENAI_API_KEY?: string;
   readonly VITE_OPENAI_MODEL?: string;
+  /** Base URL of the LLM proxy worker (e.g. Cloudflare Workers).
+   *  When set, the OpenAI SDK and direct fetch call sites route
+   *  through `${VITE_LLM_PROXY_URL}/v1/...` and the worker injects
+   *  the Authorization header server-side. Required for any public
+   *  build (GitHub Pages) so the API key isn't shipped in the
+   *  browser bundle. Leave unset for local dev with `.env.local`. */
+  readonly VITE_LLM_PROXY_URL?: string;
 }
 
 interface ImportMeta {

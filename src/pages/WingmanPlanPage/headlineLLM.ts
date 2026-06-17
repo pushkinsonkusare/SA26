@@ -1,4 +1,8 @@
-import OpenAI from "openai";
+import {
+  getOpenAIClient,
+  getOpenAIModel,
+  isLlmConfigured,
+} from "../../lib/openaiClient";
 
 /* =============================================================
  * LLM upgrade for the WingmanPlanPage hero headline.
@@ -12,8 +16,9 @@ import OpenAI from "openai";
  * shopper never sees an error.
  *
  * Design notes (mirrors `assistantSuggestionsLLM.ts`):
- *   - Reads `VITE_OPENAI_API_KEY` from env. Returns `null` when
- *     unset so the caller silently keeps the heuristic.
+ *   - Backend selection (proxy vs direct key) is centralized in
+ *     `lib/openaiClient`. Returns `null` when nothing is
+ *     configured so the caller silently keeps the heuristic.
  *   - Per-query in-memory cache. A repeated query inside the
  *     same session never re-fires the network request.
  *   - Cancellable via AbortSignal — caller passes a signal that
@@ -25,26 +30,9 @@ import OpenAI from "openai";
  *     no trailing punctuation. Anything else returns `null`.
  * ============================================================= */
 
-const API_KEY = (import.meta.env.VITE_OPENAI_API_KEY ?? "").trim();
-const MODEL = (import.meta.env.VITE_OPENAI_MODEL ?? "").trim() || "gpt-4o-mini";
-
 /** In-memory cache scoped to the page session. Key is the lower-
  *  cased trimmed query so casing variations share a result. */
 const cache = new Map<string, string>();
-
-/** Lazily instantiated singleton — avoids creating a client when the
- *  API key is missing. */
-let clientSingleton: OpenAI | null = null;
-function getClient(): OpenAI | null {
-  if (!API_KEY) return null;
-  if (clientSingleton == null) {
-    clientSingleton = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true,
-    });
-  }
-  return clientSingleton;
-}
 
 const SYSTEM_PROMPT = [
   "You convert a shopper's free-text query into a short hero headline for a gear shopping page.",
@@ -123,7 +111,7 @@ export async function generateHeadline(
 ): Promise<string | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
-  const client = getClient();
+  const client = getOpenAIClient();
   if (!client) return null;
 
   const cacheKey = trimmed.toLowerCase();
@@ -135,7 +123,7 @@ export async function generateHeadline(
   try {
     const response = await client.chat.completions.create(
       {
-        model: MODEL,
+        model: getOpenAIModel(),
         // Low temperature — we want consistent, on-template phrasing.
         temperature: 0.2,
         // Headlines are tiny; cap the budget so a runaway response
@@ -174,8 +162,8 @@ export async function generateHeadline(
   }
 }
 
-/** Whether an API key is configured — caller can short-circuit the
- *  effect entirely when this is false. */
+/** Whether an LLM backend is configured — caller can short-circuit
+ *  the effect entirely when this is false. */
 export function isHeadlineLlmAvailable(): boolean {
-  return Boolean(API_KEY);
+  return isLlmConfigured();
 }

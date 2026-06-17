@@ -41,9 +41,7 @@ import {
 } from "./broadRecipes";
 import { resolveProductFaq } from "./productFaq";
 import type { SxsMessage } from "./types";
-
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY?.trim();
-const OPENAI_MODEL = import.meta.env.VITE_OPENAI_MODEL?.trim() || "gpt-4o-mini";
+import { isLlmConfigured } from "../../../lib/openaiClient";
 
 const RESPONSE_LATENCY_MS = 900;
 
@@ -548,10 +546,8 @@ export function useSideBySideAgent() {
   /* ---------- OpenAI agent (optional, mirrors Sidecar) ---------- */
 
   const agentRef = useRef<OpenAIAgent | null>(null);
-  if (agentRef.current === null && OPENAI_API_KEY && products.length > 0) {
+  if (agentRef.current === null && isLlmConfigured() && products.length > 0) {
     agentRef.current = createOpenAIAgent({
-      apiKey: OPENAI_API_KEY,
-      model: OPENAI_MODEL,
       products,
       getProductBySlug: (slug) => getProductBySlug(slug),
     });

@@ -1,4 +1,8 @@
-import OpenAI from "openai";
+import {
+  getOpenAIClient,
+  getOpenAIModel,
+  isLlmConfigured,
+} from "../../lib/openaiClient";
 import type { Combo } from "./buildPlan";
 import type { KitRationale } from "./kitRationale";
 
@@ -37,25 +41,10 @@ import type { KitRationale } from "./kitRationale";
  *     caller's heuristic fills the gap.
  * ============================================================= */
 
-const API_KEY = (import.meta.env.VITE_OPENAI_API_KEY ?? "").trim();
-const MODEL = (import.meta.env.VITE_OPENAI_MODEL ?? "").trim() || "gpt-4o-mini";
-
 /** Per-kit in-memory cache scoped to the page session. Key includes
  *  the sorted slug list AND the primary activity so a battery in a
  *  travel kit can read different from a battery in a wedding kit. */
 const cache = new Map<string, ReadonlyMap<string, KitRationale>>();
-
-let clientSingleton: OpenAI | null = null;
-function getClient(): OpenAI | null {
-  if (!API_KEY) return null;
-  if (clientSingleton == null) {
-    clientSingleton = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true,
-    });
-  }
-  return clientSingleton;
-}
 
 /* Sort the slug list before joining so callers don't need to worry
  * about consistent ordering — a kit assembled in any order hits the
@@ -177,7 +166,7 @@ export async function generateKitRationales(
   primaryActivity: string | undefined,
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, KitRationale> | null> {
-  const client = getClient();
+  const client = getOpenAIClient();
   if (!client) return null;
 
   const cacheKey = buildCacheKey(combo, primaryActivity);
@@ -191,7 +180,7 @@ export async function generateKitRationales(
   try {
     const response = await client.chat.completions.create(
       {
-        model: MODEL,
+        model: getOpenAIModel(),
         /* Slightly higher than the headline temperature so rationales
          * across the kit don't all rhyme — but still constrained
          * enough that the model stays on-template. */
@@ -264,10 +253,10 @@ export async function generateKitRationales(
   }
 }
 
-/** Whether an API key is configured — caller can short-circuit the
- *  effect entirely when this is false. */
+/** Whether an LLM backend is configured — caller can short-circuit
+ *  the effect entirely when this is false. */
 export function isKitRationaleLlmAvailable(): boolean {
-  return Boolean(API_KEY);
+  return isLlmConfigured();
 }
 
 /* Tolerance shim: the model usually returns the slug map at the top

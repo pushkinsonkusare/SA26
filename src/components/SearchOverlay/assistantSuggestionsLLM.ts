@@ -1,4 +1,8 @@
-import OpenAI from "openai";
+import {
+  getOpenAIClient,
+  getOpenAIModel,
+  isLlmConfigured,
+} from "../../lib/openaiClient";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { isBundleTrippingPhrase } from "./assistantSuggestions";
 
@@ -26,25 +30,8 @@ import { isBundleTrippingPhrase } from "./assistantSuggestions";
  *     `null`; never throws into the caller's render path.
  * ============================================================= */
 
-const API_KEY = (import.meta.env.VITE_OPENAI_API_KEY ?? "").trim();
-const MODEL = (import.meta.env.VITE_OPENAI_MODEL ?? "").trim() || "gpt-4o-mini";
-
 /** In-memory cache scoped to the page session. */
 const cache = new Map<string, string[]>();
-
-/** Lazily instantiated singleton — avoids creating a client when the
- *  API key is missing. */
-let clientSingleton: OpenAI | null = null;
-function getClient(): OpenAI | null {
-  if (!API_KEY) return null;
-  if (clientSingleton == null) {
-    clientSingleton = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true,
-    });
-  }
-  return clientSingleton;
-}
 
 /**
  * Compact metadata payload for the LLM. We deliberately pass
@@ -111,7 +98,7 @@ export async function fetchAssistantSuggestionsLLM(
   const trimmed = query.trim();
   if (!trimmed) return null;
   if (products.length === 0) return null;
-  const client = getClient();
+  const client = getOpenAIClient();
   if (!client) return null;
 
   const cacheKey = trimmed.toLowerCase();
@@ -123,7 +110,7 @@ export async function fetchAssistantSuggestionsLLM(
   try {
     const response = await client.chat.completions.create(
       {
-        model: MODEL,
+        model: getOpenAIModel(),
         temperature: 0.4,
         max_tokens: 160,
         response_format: { type: "json_object" },
@@ -177,8 +164,8 @@ export async function fetchAssistantSuggestionsLLM(
   }
 }
 
-/** Whether an API key is configured — caller can short-circuit the
- *  effect entirely when this is false. */
+/** Whether an LLM backend is configured — caller can short-circuit
+ *  the effect entirely when this is false. */
 export function isLlmAvailable(): boolean {
-  return Boolean(API_KEY);
+  return isLlmConfigured();
 }

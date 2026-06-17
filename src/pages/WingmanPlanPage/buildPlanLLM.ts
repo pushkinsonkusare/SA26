@@ -1,4 +1,8 @@
-import OpenAI from "openai";
+import {
+  getOpenAIClient,
+  getOpenAIModel,
+  isLlmConfigured,
+} from "../../lib/openaiClient";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { buildPlan, type Combo, type PlanResult } from "./buildPlan";
 import {
@@ -9,21 +13,6 @@ import {
   findAccessoriesFor,
   isAccessoryCompatibleWithCoreStrict,
 } from "../../components/SidecarAssistant/conversation/flow";
-
-const API_KEY = (import.meta.env.VITE_OPENAI_API_KEY ?? "").trim();
-const MODEL = (import.meta.env.VITE_OPENAI_MODEL ?? "").trim() || "gpt-4o-mini";
-
-let clientSingleton: OpenAI | null = null;
-function getClient(): OpenAI | null {
-  if (!API_KEY) return null;
-  if (!clientSingleton) {
-    clientSingleton = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true,
-    });
-  }
-  return clientSingleton;
-}
 
 function byScoreDesc(a: CatalogProduct, b: CatalogProduct): number {
   const ar = a.rating ?? 0;
@@ -496,7 +485,7 @@ function buildPrompt(query: string, catalog: CatalogProduct[], fallback: PlanRes
 }
 
 export function isWingmanPlanLlmAvailable(): boolean {
-  return Boolean(API_KEY);
+  return isLlmConfigured();
 }
 
 export async function buildPlanWithLlm(
@@ -504,7 +493,7 @@ export async function buildPlanWithLlm(
   catalog: CatalogProduct[],
   signal: AbortSignal,
 ): Promise<PlanResult | null> {
-  const client = getClient();
+  const client = getOpenAIClient();
   const trimmed = query.trim();
   if (!client || !trimmed || catalog.length === 0) return null;
 
@@ -516,7 +505,7 @@ export async function buildPlanWithLlm(
   try {
     const response = await client.chat.completions.create(
       {
-        model: MODEL,
+        model: getOpenAIModel(),
         temperature: 0.35,
         max_tokens: 1200,
         response_format: { type: "json_object" },
