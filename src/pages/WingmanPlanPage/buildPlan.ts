@@ -870,6 +870,15 @@ const HEADLINE_LEADING_PATTERNS: RegExp[] = [
    * banner. */
   /^i\s+am\s+(looking\s+to|trying\s+to|going\s+to|planning\s+to|headed\s+to|off\s+to)\s+/i,
   /^we\s+(are|'re)\s+(looking\s+to|trying\s+to|going\s+to|planning\s+to|headed\s+to|off\s+to)\s+/i,
+  /* BARE gerund openers — "heading to iceland", "going to alaska",
+   * "off to bali". Casual shoppers drop the "I'm" / "we're" subject.
+   * Without these patterns the leading clause survives and the
+   * heuristic banner reads like the raw query. */
+  /^(heading|going|off|headed|traveling|travelling|flying|driving|biking|hiking)\s+(to|for|out)\s+/i,
+  /* Verb + gerund openers — "planning a road trip", "thinking about a
+   * wedding shoot". Followed by an article so we don't accidentally
+   * eat verbs that anchor the activity. */
+  /^(planning|thinking\s+about|considering|preparing\s+for|getting\s+ready\s+for)\s+(a|an|my|our|the)\s+/i,
   /^help\s+me\s+(with\s+)?/i,
   /^show\s+me\s+/i,
   /^build\s+(me\s+)?/i,
@@ -881,9 +890,9 @@ const HEADLINE_LEADING_PATTERNS: RegExp[] = [
   /^what'?s\s+(the\s+)?(best|right)\s+(gear|kit|setup|equipment)\s+for\s+/i,
 ];
 
-/* Trailing interrogative clauses that shoppers chain onto a context
- * sentence ("…next month, what should I carry"). We strip these
- * after the leading-verb pass so the heuristic returns the
+/* Trailing interrogative / intent clauses that shoppers chain onto a
+ * context sentence ("…next month, what should I carry"). We strip
+ * these after the leading-verb pass so the heuristic returns the
  * descriptive prefix rather than the question. Patterns are anchored
  * to a clause boundary (start of string, comma, or period) so we
  * never gobble an internal phrase that happens to contain "what". */
@@ -892,7 +901,39 @@ const HEADLINE_TRAILING_INTERROGATIVES: RegExp[] = [
   /[\s,;]+(can\s+you|could\s+you)\s+(suggest|recommend|help)\s+.*$/i,
   /[\s,;]+(any\s+)?(suggestions?|recommendations?|ideas?)\??\s*$/i,
   /[\s,;]+(help|advice)\s+(needed|please)?\??\s*$/i,
+  /* Intent clauses — "..., want to film the northern lights" /
+   * "..., planning to document the trip". These are second-clause
+   * elaborations on the user's goal that bloat the headline. */
+  /[\s,;]+(want\s+to|wanting\s+to|need\s+to|planning\s+to|going\s+to|hoping\s+to|trying\s+to)\s+.*$/i,
+  /* Time/companion qualifiers — "..., in december with my partner",
+   * "...next week", "...this weekend". Anything starting with a
+   * preposition + time/companion noun is throat-clearing context. */
+  /[\s,;]+(in|on|during|with)\s+(my|our|the|january|february|march|april|may|june|july|august|september|october|november|december|spring|summer|fall|winter|autumn|partner|family|friends|kids|wife|husband|girlfriend|boyfriend)\b.*$/i,
+  /* Bare "next X" / "this X" / "for the X" time phrases. The
+   * second token can be any single word — lazier than enumerating
+   * every time unit and good enough for the heuristic. */
+  /[\s,;]?\s+(next|this|last|every|each|over\s+the)\s+(week|weeks|weekend|month|months|year|years|day|days|spring|summer|fall|winter|autumn|holiday|holidays|trip|vacation)\b.*$/i,
 ];
+
+/* Words that, when they appear as a standalone token after the
+ * stripping passes, mean the heuristic still has filler in it.
+ * If a stripped headline ends with one of these, drop the trailing
+ * tail back to the previous word boundary. */
+const HEADLINE_TRAILING_DEAD_WORDS = new Set([
+  "to",
+  "with",
+  "in",
+  "on",
+  "for",
+  "and",
+  "or",
+  "of",
+  "the",
+  "a",
+  "an",
+  "my",
+  "our",
+]);
 
 /* 40 chars ≈ 6 words at typical English word lengths — matches the
  * LLM headline target of 2-5 words so the fallback and the LLM
@@ -920,20 +961,37 @@ export function shortenQuery(query: string): string {
     if (!matched) break;
   }
 
-  /* Strip a trailing interrogative clause ("…what should I carry").
-   * Run before the punctuation tail strip so a comma or period before
-   * the question gets eaten with the question. */
-  for (const pattern of HEADLINE_TRAILING_INTERROGATIVES) {
-    const next = working.replace(pattern, "");
-    if (next !== working) {
-      working = next.trim();
-      break;
+  /* Strip a trailing interrogative / intent clause ("…what should
+   * I carry", "…want to film the northern lights"). Loop so chained
+   * trailing clauses (intent clause followed by an interrogative)
+   * collapse in one shortenQuery pass. Cap iterations defensively. */
+  for (let i = 0; i < 3; i += 1) {
+    let matched = false;
+    for (const pattern of HEADLINE_TRAILING_INTERROGATIVES) {
+      const next = working.replace(pattern, "");
+      if (next !== working) {
+        working = next.trim();
+        matched = true;
+        break;
+      }
     }
+    if (!matched) break;
   }
 
   /* Drop a trailing punctuation tail; keep internal punctuation intact
    * so phrases like "drones, gimbals & mics" still read naturally. */
   working = working.replace(/[?!.,;:]+$/g, "").trim();
+
+  /* If the previous strips left a dangling preposition or article
+   * ("…going for", "…with my"), peel it back to the last meaningful
+   * word so the banner doesn't read mid-thought. */
+  for (let i = 0; i < 3; i += 1) {
+    const lastSpace = working.lastIndexOf(" ");
+    if (lastSpace <= 0) break;
+    const tail = working.slice(lastSpace + 1).toLowerCase().replace(/[^a-z']/g, "");
+    if (!HEADLINE_TRAILING_DEAD_WORDS.has(tail)) break;
+    working = working.slice(0, lastSpace).replace(/[?!.,;:]+$/g, "").trim();
+  }
 
   if (!working) return query.trim();
 
