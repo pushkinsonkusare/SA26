@@ -45,10 +45,16 @@ export function AgentModeBar() {
   }, [isSwitcherOpen]);
 
   useEffect(() => {
+    /* Reflect the active viewport on the documentElement so CSS
+     * media-query-equivalents can scope to it. We deliberately
+     * DON'T persist this to localStorage anymore — every page
+     * refresh resets the experience switcher to its defaults
+     * (see `AgentModeContext.tsx`). One-time cleanup of any stale
+     * value left by a previous build keeps the storage tidy. */
     const root = document.documentElement;
     root.setAttribute("data-demo-viewport", viewportMode);
     try {
-      window.localStorage.setItem("agent-demo-viewport-mode", viewportMode);
+      window.localStorage.removeItem("agent-demo-viewport-mode");
     } catch {
       /* localStorage can fail in private mode; ignore gracefully. */
     }

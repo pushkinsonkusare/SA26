@@ -9,6 +9,17 @@ dist-ssr/
 .vite/
 *.timestamp-*.mjs
 
+# Local env files (NEVER commit — these hold API keys)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Wrangler / Cloudflare Workers tmp + state
+.wrangler/
+.dev.vars
+
 # Logs
 *.log
 npm-debug.log*

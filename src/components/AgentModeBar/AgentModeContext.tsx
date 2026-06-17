@@ -25,13 +25,21 @@ type AgentModeContextValue = {
 
 const AgentModeContext = createContext<AgentModeContextValue | undefined>(undefined);
 
+/* Hard defaults for every page load. By design, refreshing the
+ * page ALWAYS resets the experience switcher to Immersive + Desktop
+ * regardless of what the shopper picked in the previous session.
+ * If you change these defaults, also update
+ * `.cursor/rules/agent-mode-defaults.mdc` so future agents pick up
+ * the new convention. */
+const DEFAULT_AGENT_MODE: AgentMode = "immersive";
+const DEFAULT_VIEWPORT_MODE: DemoViewportMode = "desktop";
+
 export function AgentModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<AgentMode>("assistant-only");
-  const [viewportMode, setViewportMode] = useState<DemoViewportMode>(() => {
-    if (typeof window === "undefined") return "desktop";
-    const saved = window.localStorage.getItem("agent-demo-viewport-mode");
-    return saved === "mobile" ? "mobile" : "desktop";
-  });
+  /* No localStorage init for either piece of state: every refresh
+   * starts from the hard defaults above. The mid-session setters
+   * still work normally; they just don't survive a reload. */
+  const [mode, setMode] = useState<AgentMode>(DEFAULT_AGENT_MODE);
+  const [viewportMode, setViewportMode] = useState<DemoViewportMode>(DEFAULT_VIEWPORT_MODE);
 
   const value = useMemo(
     () => ({ mode, setMode, viewportMode, setViewportMode }),
