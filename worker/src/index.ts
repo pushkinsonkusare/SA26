@@ -62,6 +62,22 @@ const FORWARDABLE_HEADERS = new Set([
   "openai-organization",
 ]);
 
+/* Headers the browser is allowed to send on requests to us. Must
+ * be a SUPERSET of FORWARDABLE_HEADERS plus any "decorative" headers
+ * the SDK sets that we don't actually forward but the browser still
+ * needs the server to acknowledge during the CORS preflight.
+ *
+ * `authorization`: the OpenAI JS SDK always sets this (with a
+ * placeholder value in proxy mode) and the browser's preflight will
+ * fail unless the server says it's allowed. The Worker still
+ * overwrites it with the real key from the OPENAI_API_KEY secret
+ * before forwarding upstream — this allowlist exists purely so the
+ * preflight passes. */
+const CORS_ALLOWED_REQUEST_HEADERS = new Set([
+  ...FORWARDABLE_HEADERS,
+  "authorization",
+]);
+
 const JSON_BODY_LIMIT_BYTES = 1 * 1024 * 1024; // 1 MiB
 const AUDIO_BODY_LIMIT_BYTES = 26 * 1024 * 1024; // 26 MiB (Whisper hard-caps near 25)
 
@@ -83,7 +99,7 @@ function buildCorsHeaders(origin: string, allowed: Set<string>): Record<string, 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": [...FORWARDABLE_HEADERS].join(", "),
+    "Access-Control-Allow-Headers": [...CORS_ALLOWED_REQUEST_HEADERS].join(", "),
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
