@@ -449,11 +449,24 @@ function getRouteState(pathname: string, search: string): RouteState {
 }
 
 export function PrototypeNavigationProvider({ children }: { children: ReactNode }) {
-  const [routeState, setRouteState] = useState<RouteState>(() =>
-    typeof window === "undefined"
-      ? EMPTY_ROUTE_STATE
-      : getRouteState(window.location.pathname, window.location.search),
-  );
+  const [routeState, setRouteState] = useState<RouteState>(() => {
+    if (typeof window === "undefined") return EMPTY_ROUTE_STATE;
+    const initial = getRouteState(window.location.pathname, window.location.search);
+    /* Hard refresh-default: every reload that lands on the
+     * home/storefront route gets rerouted to /wingman. The Wingman
+     * landing page is the canonical entry point for the immersive
+     * demo; the storefront stays reachable via the DJI brand link
+     * in the header. Implemented as `replaceState` (not `pushState`)
+     * so the back button doesn't bounce the shopper to the empty
+     * "/" they never visited. See
+     * `.cursor/rules/refresh-defaults.mdc` for the broader rule. */
+    if (initial.currentRoute === ROUTES.home) {
+      const wingmanUrl = toBrowserPath(ROUTES.wingman);
+      window.history.replaceState({}, "", wingmanUrl);
+      return getRouteState(wingmanUrl, "");
+    }
+    return initial;
+  });
 
   useEffect(() => {
     const handlePopState = () => {

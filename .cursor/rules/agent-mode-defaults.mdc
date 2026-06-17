@@ -59,6 +59,13 @@ demos) should always land on the canonical Immersive + Desktop story.
 A previously-set Mobile or Sidecar mode would silently distort first
 impressions of the build.
 
+## Sibling rule
+
+The refresh-time route default — every load that resolves to `/` is
+rerouted to `/wingman` — lives in `refresh-defaults.mdc`. Together
+they enforce that every fresh visit lands the shopper on the
+immersive Wingman page in desktop mode.
+
 ## When changing this rule
 
 1. Update the constants in `AgentModeContext.tsx`.
