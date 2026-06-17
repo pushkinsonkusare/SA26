@@ -113,11 +113,66 @@ a.prototype-brand-link.immersive-header__brand {
   font-weight: 500;
   line-height: 20px;
   cursor: pointer;
+  /* `position: relative` + `overflow: hidden` together host the
+   * shimmer pseudo: relative anchors it, hidden clips it to the
+   * pill shape so the highlight dies cleanly at the edges. */
+  position: relative;
+  overflow: hidden;
   transition:
     background-color 180ms ease,
     color 180ms ease,
     transform 180ms ease,
     box-shadow 180ms ease;
+}
+
+/* Idle attention shimmer.
+ *
+ * Subtle "catch of light" pass that sweeps across the pill on a 4.5s
+ * cycle — long pauses at either end so each sweep reads as
+ * intentional, not strobing. The 100° gradient angle gives a slight
+ * downward-right slant that mimics light grazing a beveled surface
+ * (the way Apple product page CTAs and luxury watch faces shimmer).
+ *
+ * Easing: `cubic-bezier(0.16, 1, 0.3, 1)` — iOS-style easeOutExpo,
+ * silk-smooth deceleration. Anything more linear feels mechanical;
+ * anything bouncier feels cheap.
+ *
+ * The pseudo paints in the same stacking context as the label/icon
+ * but BELOW them via the explicit z-index lift on
+ * `__wingman-label` / `__wingman-icon`, so the text stays crisp
+ * while the highlight passes underneath. */
+.immersive-header__wingman::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0.06) 55%,
+    transparent 65%
+  );
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  animation:
+    immersive-header__wingman-shimmer 4.5s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes immersive-header__wingman-shimmer {
+  /* Hold off-screen-left for the first 30% of the cycle. */
+  0%,
+  30% {
+    background-position: -100% 0;
+  }
+  /* Sweep completes by 70%, then holds off-screen-right for the
+   * final 30%. The asymmetric hold split gives a clear "anticipate
+   * → strike → settle" rhythm. */
+  70%,
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 .immersive-header__wingman:hover {
@@ -136,13 +191,38 @@ a.prototype-brand-link.immersive-header__brand {
   outline-offset: 2px;
 }
 
+/* Suppress the idle shimmer on interaction — never compete two
+ * attention cues in the same frame. The 200ms opacity fade keeps
+ * the suppression itself from feeling abrupt. */
+.immersive-header__wingman:hover::before,
+.immersive-header__wingman:focus-visible::before,
+.immersive-header__wingman:active::before {
+  animation-play-state: paused;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+/* Respect users who've opted out of decorative motion. */
+@media (prefers-reduced-motion: reduce) {
+  .immersive-header__wingman::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 .immersive-header__wingman-label {
   white-space: nowrap;
+  /* Lift the label above the shimmer pseudo so the highlight
+   * passes underneath without dimming the text. */
+  position: relative;
+  z-index: 1;
 }
 
 .immersive-header__wingman-icon {
   flex: 0 0 12px;
   color: currentColor;
+  position: relative;
+  z-index: 1;
 }
 
 /* Action icon group — 5 transparent 36×36 buttons sitting flush against
