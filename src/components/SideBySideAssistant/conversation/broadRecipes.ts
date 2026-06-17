@@ -326,11 +326,159 @@ const DEFAULT_RECIPE: BroadSubTopicSpec[] = [
   },
 ];
 
+/* ---------- Category-led recipes ----------
+ *
+ * Used when the shopper EXPLICITLY names a product category in the
+ * query ("suggest gimbals", "show me microphones", "drones for my
+ * trip"). The lead row reflects the named category so the kit
+ * builder anchors on it; supporting rows fill in compatible
+ * accessories. These take priority over activity-detection (a query
+ * like "Lake Tahoe, suggest gimbals" should land on gimbals, NOT a
+ * drone-led hiking recipe).
+ *
+ * Keys match `Intent.categoryLabel` from `CATEGORY_PATTERNS` in
+ * `src/components/SidecarAssistant/conversation/flow.ts`. Add a new
+ * entry here whenever you add a new label there. */
+
+const GIMBALS_RECIPE: BroadSubTopicSpec[] = [
+  {
+    id: "category-gimbals-mobile",
+    title: "Mobile gimbals",
+    categoryToken: "gimbal",
+    subtypes: ["gimbal_phone"],
+    leadCount: 4,
+  },
+  {
+    id: "category-gimbals-camera",
+    title: "Camera gimbals",
+    categoryToken: "gimbal",
+    subtypes: ["gimbal_camera"],
+    leadCount: 4,
+  },
+  {
+    id: "category-gimbals-cases",
+    title: "Cases & carry",
+    categoryToken: "case",
+    subtypes: ["acc_case"],
+    leadCount: 4,
+  },
+  {
+    id: "category-gimbals-mounts",
+    title: "Mounts & adapters",
+    categoryToken: "mount",
+    accessoryRole: "mounting",
+    leadCount: 4,
+  },
+];
+
+const MICROPHONES_RECIPE: BroadSubTopicSpec[] = [
+  {
+    id: "category-mics-wireless",
+    title: "Wireless microphones",
+    categoryToken: "microphone",
+    subtypes: ["mic_wireless"],
+    leadCount: 6,
+    allowBundles: true,
+  },
+  {
+    id: "category-mics-lavalier",
+    title: "Lavalier mics",
+    categoryToken: "microphone",
+    subtypes: ["mic_lavalier"],
+    leadCount: 4,
+  },
+  {
+    id: "category-mics-cases",
+    title: "Cases & carry",
+    categoryToken: "case",
+    subtypes: ["acc_case"],
+    leadCount: 4,
+  },
+];
+
+const DRONES_RECIPE: BroadSubTopicSpec[] = [
+  {
+    id: "category-drones-4k",
+    title: "4K drones",
+    categoryToken: "4k drones",
+    titleExcludeAny: ["Combo", "Fly More"],
+    leadCount: 6,
+  },
+  {
+    id: "category-drones-filters",
+    title: "Lens filters",
+    categoryToken: "lens filter",
+    subtypes: ["acc_filter_nd", "acc_filter_cpl"],
+    leadCount: 4,
+  },
+  {
+    id: "category-drones-batteries",
+    title: "Spare batteries",
+    categoryToken: "battery",
+    subtypes: ["acc_battery"],
+    leadCount: 4,
+  },
+  {
+    id: "category-drones-cases",
+    title: "Cases & carry",
+    categoryToken: "case",
+    subtypes: ["acc_case"],
+    leadCount: 4,
+  },
+];
+
+const ACTION_CAMERAS_RECIPE: BroadSubTopicSpec[] = [
+  {
+    id: "category-action-cams",
+    title: "Action cameras",
+    categoryToken: "action camera",
+    subtypes: ["cam_action"],
+    titleExcludeAny: ["Adventure", "Fly More"],
+    leadCount: 6,
+  },
+  {
+    id: "category-action-mounts",
+    title: "Mounts & rigs",
+    categoryToken: "mount",
+    accessoryRole: "mounting",
+    leadCount: 4,
+  },
+  {
+    id: "category-action-batteries",
+    title: "Spare batteries",
+    categoryToken: "battery",
+    subtypes: ["acc_battery"],
+    leadCount: 4,
+  },
+  {
+    id: "category-action-cases",
+    title: "Cases & carry",
+    categoryToken: "case",
+    subtypes: ["acc_case"],
+    leadCount: 4,
+  },
+];
+
+/** Map from `Intent.categoryLabel` to the recipe to use when the
+ *  shopper explicitly named that category. Add new entries as new
+ *  CATEGORY_PATTERNS labels appear in `flow.ts`. Categories not
+ *  present here fall through to activity / tag detection. */
+const CATEGORY_LED_RECIPES: Record<string, BroadSubTopicSpec[]> = {
+  gimbals: GIMBALS_RECIPE,
+  microphones: MICROPHONES_RECIPE,
+  drones: DRONES_RECIPE,
+  "action cameras": ACTION_CAMERAS_RECIPE,
+};
+
 const ALL_RECIPES: BroadSubTopicSpec[][] = [
   VLOGGING_RECIPE,
   TRAVEL_RECIPE,
   RUGGED_RECIPE,
   BEGINNER_RECIPE,
+  GIMBALS_RECIPE,
+  MICROPHONES_RECIPE,
+  DRONES_RECIPE,
+  ACTION_CAMERAS_RECIPE,
   DEFAULT_RECIPE,
 ];
 
@@ -629,27 +777,42 @@ function buildActivityRecipe(activity: string): BroadSubTopicSpec[] {
  * Pick the most-specific recipe that matches the inferred intent.
  *
  * Selection priority (first match wins):
- *  1. v6 ACTIVITY KEYWORD detected in the raw query (motorcycle, travel,
+ *  1. EXPLICIT CATEGORY named in the query ("gimbals", "microphones",
+ *     "drones", "action cameras") — uses `CATEGORY_LED_RECIPES`. We
+ *     check this FIRST so a query like "Lake Tahoe, suggest gimbals"
+ *     leads with gimbals instead of being captured by hiking-flavoured
+ *     activity detection (which would build a drone-led kit).
+ *  2. v6 ACTIVITY KEYWORD detected in the raw query (motorcycle, travel,
  *     podcast, wedding, skiing, surfing, real estate, vlog, …) —
  *     generates a tailored recipe on the fly using
- *     `ACTIVITY_ROW_TEMPLATES`. Activities are checked FIRST so a
+ *     `ACTIVITY_ROW_TEMPLATES`. Activities are checked SECOND so a
  *     compound query like "gear for travel vlogging" routes to the
  *     `travel` template (which already includes a Lightweight gimbals
  *     row) rather than being short-circuited to the moto-flavoured
  *     `VLOGGING_RECIPE` by the `vlog\w*` tag.
- *  2. `vlogging` tag (covers selfie/creator-tag queries that don't
+ *  3. `vlogging` tag (covers selfie/creator-tag queries that don't
  *     trip an activity, e.g. "gear for selfies", "kit for creators").
- *  3. `rugged` tag (extreme/outdoor/adventure queries with no specific
+ *  4. `rugged` tag (extreme/outdoor/adventure queries with no specific
  *     activity).
- *  4. `compact` / `travel` tag.
- *  5. `tier === "beginner"`.
- *  6. fallback to the neutral 5-category roster.
+ *  5. `compact` / `travel` tag.
+ *  6. `tier === "beginner"`.
+ *  7. fallback to the neutral 5-category roster.
  */
 export function pickRecipeForIntent(
   intent: Intent | undefined,
   query?: string,
 ): BroadSubTopicSpec[] {
   const tags = new Set(intent?.requiredTags ?? []);
+
+  /* Explicit-category override. If the shopper named a category, we
+   * always lead with that — even if their query also tripped an
+   * activity (e.g. "Lake Tahoe, suggest gimbals" trips both `gimbals`
+   * AND a hiking-adjacent activity, but the gimbals signal is the
+   * unambiguous expression of intent). */
+  const explicitCategoryLabel = intent?.categoryLabel?.toLowerCase();
+  if (explicitCategoryLabel && explicitCategoryLabel in CATEGORY_LED_RECIPES) {
+    return CATEGORY_LED_RECIPES[explicitCategoryLabel];
+  }
 
   const detectedActivities = extractActivitiesFromQuery(query);
   if (detectedActivities.length > 0) {
