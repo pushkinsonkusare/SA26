@@ -36,12 +36,18 @@ const cache = new Map<string, string>();
 
 const SYSTEM_PROMPT = [
   "You convert a shopper's free-text query into a short hero headline for a gear shopping page.",
-  'Format: "{modifier} {thing} for {activity}" — 2 to 5 words total.',
-  "- Use generic shopping nouns for {thing}: equipment, gear, kit, tech.",
-  "- If the shopper mentions skill level (beginner, pro, intermediate, advanced), use it as the {modifier}; otherwise omit the modifier.",
-  '- Drop polite/conversational phrasing ("what do you suggest", "i want", "help me", "can you", "i am going").',
-  "- Lowercase except proper nouns and product names.",
-  "- Output ONLY the headline. No quotes, no surrounding punctuation, no preamble, no markdown.",
+  "",
+  "FORMAT (strict): a SINGLE noun phrase of 2-5 words, lowercase except proper nouns and product names.",
+  '  Template: "{modifier} {thing} for {activity}" where {thing} is a generic shopping noun (equipment, gear, kit, tech).',
+  "  - {modifier} is optional. Use it ONLY for explicit skill levels (beginner, pro, intermediate, advanced).",
+  "  - {activity} should be a concrete activity or hobby — distill it from the query, don't echo place/time noise.",
+  "",
+  "HARD RULES:",
+  "- Output EXACTLY ONE noun phrase. No sentences, no punctuation INSIDE the phrase, no period at the end.",
+  '- Drop conversational and contextual filler: "i want / i need / help me / can you / what should i / im going to / next month / for my trip / to document".',
+  "- Drop place names + dates UNLESS the place IS the activity (e.g. 'yosemite' implies hiking; the headline should say 'hiking', not 'yosemite').",
+  "- NEVER include words like 'suggest', 'pack', 'should', 'recommend', 'help', 'next month' — these are signs you're echoing the query instead of distilling it.",
+  "- Output ONLY the headline. No quotes, no preamble, no markdown, no labels.",
   "",
   "Examples:",
   "shopper: i am going camping, what do you suggest",
@@ -58,7 +64,38 @@ const SYSTEM_PROMPT = [
   "",
   "shopper: i need a pro setup for wedding videography",
   "headline: pro kit for wedding videography",
+  "",
+  "shopper: im going to yosemite next month, what gear should i pack in my hiking backpack to document the trip",
+  "headline: gear for yosemite hike",
+  "",
+  "shopper: heading to iceland in december with my partner, want to film the northern lights",
+  "headline: kit for northern lights",
+  "",
+  "shopper: i'm a beginner and want to vlog while riding my motorcycle through the alps",
+  "headline: beginner gear for moto vlogging",
 ].join("\n");
+
+/* Tokens that signal the model echoed the query rather than
+ * distilling it (the prompt explicitly forbids them). Any of these
+ * appearing as a standalone word makes the result invalid.
+ * Words like "trip" or "year" are deliberately NOT in the list
+ * because they appear in legitimate headlines ("kit for road trip",
+ * "best of the year"). */
+const FORBIDDEN_FILLER_TOKENS = new Set([
+  "suggest",
+  "suggestions",
+  "recommend",
+  "recommendations",
+  "pack",
+  "packing",
+  "should",
+  "help",
+  "please",
+  "next",
+  "month",
+  "week",
+  "document",
+]);
 
 /** Strict-but-tolerant validation on the model's response. We bias
  *  toward returning `null` (and letting the heuristic stand) rather
@@ -85,10 +122,29 @@ function sanitize(raw: string | null | undefined): string | null {
 
   if (!text) return null;
 
+  /* INTERNAL sentence-ending punctuation = the model returned a
+   * multi-clause sentence instead of a single noun phrase. The
+   * trailing-punct strip above already removed end-of-string
+   * `.!?`, so anything remaining is necessarily internal. Reject
+   * outright (heuristic fallback is far safer than rendering
+   * something like "Yosemite next month. Suggest gear to pack"). */
+  if (/[.!?]/.test(text)) {
+    return null;
+  }
+
   // Word-count bound. Six is generous for the "{modifier} {thing}
   // for {activity}" template.
-  const wordCount = text.split(/\s+/).length;
+  const words = text.split(/\s+/);
+  const wordCount = words.length;
   if (wordCount === 0 || wordCount > 6) return null;
+
+  /* Echo-detection: any forbidden filler token (case-insensitive,
+   * standalone word) means the model parroted the user's query. The
+   * heuristic fallback is more useful than a half-distilled headline. */
+  const lowerWords = words.map((w) => w.toLowerCase().replace(/[^a-z]/g, ""));
+  for (const w of lowerWords) {
+    if (FORBIDDEN_FILLER_TOKENS.has(w)) return null;
+  }
 
   // Hard length cap as a second line of defense against runaway output.
   if (text.length > 64) return null;
