@@ -2003,6 +2003,7 @@
   flex-direction: column;
   justify-content: flex-start;
   align-items: center;
+  align-self: center;
   gap: 0;
   padding-left: var(--main-pad-x);
   padding-right: var(--main-pad-x);
@@ -2010,6 +2011,7 @@
   padding-bottom: 16px;
   max-width: calc(567px + var(--main-pad-x) * 2);
   width: 100%;
+  text-align: center;
   box-sizing: border-box;
 }
 

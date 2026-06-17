@@ -4,6 +4,12 @@ import react from "@vitejs/plugin-react";
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "/SA26/" : "/",
   plugins: [react()],
+  build: {
+    /* Output to /docs so legacy GitHub Pages can serve it directly
+     * from `main` branch with Source: /docs (no Actions needed). */
+    outDir: "docs",
+    emptyOutDir: true,
+  },
   server: {
     /* Pin host + port so HMR has one stable socket to talk to. */
     host: "localhost",
