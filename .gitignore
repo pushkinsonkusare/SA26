@@ -9,6 +9,9 @@ dist-ssr/
 .vite/
 *.timestamp-*.mjs
 
+# dev-watch.sh runtime PID file
+.dev-watch.pid
+
 # Local env files (NEVER commit — these hold API keys)
 .env
 .env.local
