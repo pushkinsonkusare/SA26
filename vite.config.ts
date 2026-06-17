@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ command }) => ({
-  base: command === "build" ? "/pages/psonkusare/Agentic-Commerce/" : "/",
+  base: command === "build" ? "/SA26/" : "/",
   plugins: [react()],
   server: {
     /* Pin host + port so HMR has one stable socket to talk to. */
