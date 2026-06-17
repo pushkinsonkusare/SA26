@@ -100,7 +100,12 @@ function buildCorsHeaders(origin: string, allowed: Set<string>): Record<string, 
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": [...CORS_ALLOWED_REQUEST_HEADERS].join(", "),
-    "Access-Control-Max-Age": "86400",
+    /* Short-ish preflight cache so any future change to the
+     * allowlist propagates within minutes instead of staying
+     * stuck for 24 hours on every browser that previously hit
+     * us. The chat completions endpoint is idempotent enough
+     * that re-issuing a preflight every 10 min costs nothing. */
+    "Access-Control-Max-Age": "600",
     Vary: "Origin",
   };
 }
