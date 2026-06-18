@@ -573,6 +573,18 @@ const ACTIVITY_ROW_TEMPLATES: Record<string, ActivityRowTemplate[]> = {
     { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
     { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 4 },
   ],
+  /* Body-mounted aerial — paragliding, BASE jumping, wingsuit,
+   * skydiving. The pilot IS the subject; they need a helmet- or
+   * chest-mounted action cam, not a drone (drones are awkward to
+   * fly while flying yourself). Lead with action cam + helmet
+   * mount + chest mount, then cases. The hiking template's
+   * drone-first lead was actively misleading for these queries. */
+  paragliding: [
+    { title: "Rugged action cameras", categoryToken: "action camera", subtypes: ["cam_action"], leadCount: 4 },
+    { title: "Helmet & chest mounts", categoryToken: "mount", accessoryRole: "mounting", leadCount: 4 },
+    { title: "Spare batteries", categoryToken: "battery", subtypes: ["acc_battery"], leadCount: 4 },
+    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
+  ],
   travel: [
     { title: "Compact drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 5 },
     { title: "Pocket cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
@@ -680,7 +692,13 @@ const ACTIVITY_KEYWORD_PATTERNS: Array<{
   { activity: "skiing_snowboarding", test: /\b(ski(?:ing)?|snowboard\w*|snowsport\w*)\b/i },
   { activity: "surfing", test: /\b(surf\w*|paddleboard\w*)\b/i },
   { activity: "watersports", test: /\b(scuba|diving|snorkel\w*|kayak\w*|jet\s*ski|wakeboard\w*|watersport\w*|underwater|swimming|pool|freediv\w*|whitewater|rafting|sail\w*|yacht\w*|offshore)\b/i },
-  { activity: "hiking_outdoor", test: /\b(hik\w*|trek\w*|backpack\w*|camping|outdoor(?:s)?|trail|wilderness|landscape|paraglid\w*|base\s*jump\w*|wingsuit\w*)\b/i },
+  /* Body-mounted aerial sports MUST sit above hiking_outdoor.
+   * Their templates lead with action cameras + helmet/chest mounts;
+   * the hiking_outdoor template leads with drones, which is
+   * actively wrong for a paraglider pilot (they're the subject,
+   * not flying a drone). */
+  { activity: "paragliding", test: /\b(paraglid\w*|base\s*jump\w*|wingsuit\w*|skydiv\w*|skydive\w*|cliff\s*jump\w*)\b/i },
+  { activity: "hiking_outdoor", test: /\b(hik\w*|trek\w*|backpack\w*|camping|outdoor(?:s)?|trail|wilderness|landscape)\b/i },
   /* Phone-creator intent. Must sit ABOVE `travel` / `vlog` so compound
    * queries like "smartphone vlog" or "travel with my phone for video"
    * route to the phone_photography recipe (Osmo Mobile + mounts +
