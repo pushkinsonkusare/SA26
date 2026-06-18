@@ -377,13 +377,16 @@
   padding: 32px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  /* 24px rhythm between the header block, the tier tabs, and the
+   * active-combo content below. */
+  gap: 24px;
 }
 
 .wingman-plan-page__combos-header {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* 24px between the title and the subtitle. */
+  gap: 24px;
   /* Centered header matches the "Choose your starting kit" hero
    * pattern from the design — title and subtitle stack on the
    * vertical axis of the card, not flush-left against it. */
