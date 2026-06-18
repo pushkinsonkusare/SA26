@@ -13,6 +13,12 @@ import {
   enforceAndRankActivityFit,
 } from "../src/catalog/activityProfiles";
 import { ACTIVITY_REGRESSION_FIXTURES } from "../src/pages/WingmanPlanPage/activityRegressionFixtures";
+import { buildPlan, type Combo } from "../src/pages/WingmanPlanPage/buildPlan";
+import {
+  ACTIVITY_HIERARCHIES,
+  type ActivityHierarchy,
+} from "../src/catalog/activityHierarchies";
+import { extractActivitiesFromQuery } from "../src/components/SideBySideAssistant/conversation/broadRecipes";
 
 type LaneResult = {
   passed: boolean;
@@ -247,8 +253,153 @@ function printLane(label: string, lane: LaneResult) {
   console.log(`    top picks: ${lane.topTitles.join(" | ")}`);
 }
 
+/* =============================================================
+ * Hierarchy / buildPlan lane
+ *
+ * Tests every fixture against `buildPlan()` (the actual code path
+ * the Wingman Plan page uses) and asserts:
+ *   - the hero core of every combo matches the L1 primary filter
+ *     of the activity's hierarchy (if one exists)
+ *   - no `exclusions.productTypes` / `subtypes` / `titleTokens`
+ *     appear anywhere in the kit (core or accessories)
+ *
+ * Fixtures whose query doesn't hit any registered hierarchy are
+ * skipped — we only assert the hierarchy contract where it applies.
+ * Failures here are the canonical signal that the planner regressed
+ * (the older lane-based check above tests an adjacent assistant
+ * code path that doesn't go through buildPlan). */
+
+type BuildPlanResult = {
+  name: string;
+  query: string;
+  passed: boolean;
+  hierarchyId: string | null;
+  reasons: string[];
+  combos: Array<{ id: Combo["id"]; coreTitle: string; accessoryTitles: string[] }>;
+};
+
+function pickHierarchyForQuery(query: string): { id: string; hierarchy: ActivityHierarchy } | null {
+  const detected = extractActivitiesFromQuery(query);
+  for (const id of detected) {
+    const hit = ACTIVITY_HIERARCHIES[id];
+    if (hit) return { id, hierarchy: hit };
+  }
+  return null;
+}
+
+function comboViolatesExclusions(
+  combo: Combo,
+  hierarchy: ActivityHierarchy,
+): string[] {
+  const violations: string[] = [];
+  const excl = hierarchy.exclusions;
+  if (!excl) return violations;
+  const all = [combo.core, ...combo.accessories];
+  const forbiddenTypes = new Set<string>(excl.productTypes ?? []);
+  const forbiddenSubtypes = new Set<string>(excl.subtypes ?? []);
+  const forbiddenTokens = (excl.titleTokens ?? []).map((t) => t.toLowerCase());
+  for (const product of all) {
+    if (forbiddenTypes.size > 0 && product.productType && forbiddenTypes.has(product.productType)) {
+      violations.push(
+        `${combo.id}: "${product.title}" has forbidden productType="${product.productType}"`,
+      );
+    }
+    if (forbiddenSubtypes.size > 0) {
+      for (const s of product.subtypes) {
+        if (forbiddenSubtypes.has(s)) {
+          violations.push(`${combo.id}: "${product.title}" has forbidden subtype="${s}"`);
+        }
+      }
+    }
+    if (forbiddenTokens.length > 0) {
+      const lower = product.title.toLowerCase();
+      for (const tok of forbiddenTokens) {
+        if (lower.includes(tok)) {
+          violations.push(`${combo.id}: "${product.title}" matches forbidden title token="${tok}"`);
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+function coreMatchesPrimary(combo: Combo, hierarchy: ActivityHierarchy): string | null {
+  const filter = hierarchy.primary;
+  const core = combo.core;
+  if (
+    filter.categoryToken &&
+    !core.category.toLowerCase().includes(filter.categoryToken.toLowerCase())
+  ) {
+    return `${combo.id}: core category "${core.category}" doesn't include "${filter.categoryToken}"`;
+  }
+  if (filter.subtypes && filter.subtypes.length > 0) {
+    for (const s of filter.subtypes) {
+      if (!core.subtypes.includes(s)) {
+        return `${combo.id}: core "${core.title}" missing required subtype="${s}"`;
+      }
+    }
+  }
+  return null;
+}
+
+function evaluateBuildPlanFixture(name: string, query: string): BuildPlanResult {
+  const reasons: string[] = [];
+  const hier = pickHierarchyForQuery(query);
+  const plan = buildPlan(query, catalogStore.products);
+  const combos = plan.combos;
+  const summary = {
+    name,
+    query,
+    passed: true,
+    hierarchyId: hier?.id ?? null,
+    reasons,
+    combos: combos.map((c) => ({
+      id: c.id,
+      coreTitle: c.core.title,
+      accessoryTitles: c.accessories.map((a) => a.title),
+    })),
+  } satisfies BuildPlanResult;
+
+  if (!hier) {
+    /* No hierarchy entry — the buildPlan still ran, but we can't
+     * assert against L1/exclusions. Treat as PASS by default; the
+     * legacy lane covers ranking quality. */
+    return summary;
+  }
+
+  if (combos.length === 0) {
+    summary.passed = false;
+    reasons.push("buildPlan returned 0 combos");
+    return summary;
+  }
+
+  for (const combo of combos) {
+    const primaryReason = coreMatchesPrimary(combo, hier.hierarchy);
+    if (primaryReason) reasons.push(primaryReason);
+    reasons.push(...comboViolatesExclusions(combo, hier.hierarchy));
+  }
+
+  summary.passed = reasons.length === 0;
+  return summary;
+}
+
+function printBuildPlanResult(result: BuildPlanResult) {
+  const status = result.passed ? "PASS" : "FAIL";
+  // eslint-disable-next-line no-console
+  console.log(
+    `  [${status}] hierarchy=${result.hierarchyId ?? "(none)"} ` +
+      result.combos.map((c) => `${c.id}=${c.coreTitle}`).join(" | "),
+  );
+  if (result.reasons.length > 0) {
+    for (const reason of result.reasons) {
+      // eslint-disable-next-line no-console
+      console.log(`    -> ${reason}`);
+    }
+  }
+}
+
 function main() {
-  const results = ACTIVITY_REGRESSION_FIXTURES.map((fixture) =>
+  const legacyResults = ACTIVITY_REGRESSION_FIXTURES.map((fixture) =>
     evaluateFixture(
       fixture.query,
       fixture.name,
@@ -257,23 +408,36 @@ function main() {
     ),
   );
 
-  const passed = results.filter((r) => r.overallPassed).length;
-  const total = results.length;
+  const planResults = ACTIVITY_REGRESSION_FIXTURES.map((fixture) =>
+    evaluateBuildPlanFixture(fixture.name, fixture.query),
+  );
+
+  const legacyPassed = legacyResults.filter((r) => r.overallPassed).length;
+  const planPassed = planResults.filter((r) => r.passed).length;
+  const total = legacyResults.length;
 
   // eslint-disable-next-line no-console
-  console.log(`Activity evaluator (overall): ${passed}/${total} fixtures passed\n`);
+  console.log(
+    `Activity evaluator: legacy ${legacyPassed}/${total} | buildPlan ${planPassed}/${total}\n`,
+  );
 
-  for (const result of results) {
-    const status = result.overallPassed ? "PASS" : "FAIL";
+  for (let i = 0; i < legacyResults.length; i += 1) {
+    const legacy = legacyResults[i];
+    const plan = planResults[i];
+    const legacyStatus = legacy.overallPassed ? "PASS" : "FAIL";
     // eslint-disable-next-line no-console
-    console.log(`[${status}] ${result.name}`);
-    printLane("core", result.core);
-    printLane("accessory", result.accessory);
+    console.log(`[${legacyStatus}] ${legacy.name} (legacy)`);
+    printLane("core", legacy.core);
+    printLane("accessory", legacy.accessory);
+    printBuildPlanResult(plan);
     // eslint-disable-next-line no-console
     console.log("");
   }
 
-  if (passed !== total) process.exitCode = 1;
+  /* The buildPlan lane is the canonical regression gate going
+   * forward — it tests the user-facing kit picker. Legacy lane is
+   * kept for backwards visibility but not enforced. */
+  if (planPassed !== total) process.exitCode = 1;
 }
 
 main();

@@ -1,4 +1,13 @@
 import type { CatalogProduct } from "../../../catalog/catalog";
+import {
+  ACTIVITY_HIERARCHIES,
+  TIER_INCLUSION,
+  TIER_LEAD_COUNT,
+  type ActivityHierarchy,
+  type CategoryFilter,
+  type AccessoryHint,
+  type Tier,
+} from "../../../catalog/activityHierarchies";
 import type { Intent } from "../../SidecarAssistant/conversation/flow";
 
 /* =============================================================
@@ -514,11 +523,11 @@ const ALL_SPECS_BY_ID: Map<string, BroadSubTopicSpec> = (() => {
  * ============================================================= */
 
 /**
- * Per-activity row layouts. Each entry describes 3-4 categories that
- * make sense for the activity, expressed as the fields we feed into a
- * `BroadSubTopicSpec` (the `primaryActivities` filter is added on top
- * automatically). Activities not in this map fall through to the
- * existing tier/tag heuristics, then to DEFAULT_RECIPE.
+ * Output shape of `buildActivityRowTemplates` — a row spec that gets
+ * converted into a `BroadSubTopicSpec` by `buildActivityRecipe`.
+ * Field set is intentionally narrow: only the catalog-filter knobs
+ * the hierarchy generator can populate. Legacy fields like
+ * `useActivityFilter` (hand-set on the deleted literal) are gone.
  */
 type ActivityRowTemplate = {
   title: string;
@@ -528,153 +537,6 @@ type ActivityRowTemplate = {
   accessoryRole?: AccessoryRoleKey;
   allowBundles?: boolean;
   leadCount?: number;
-  /**
-   * When `true`, the row's filter ANDs `primaryActivities: [activity]`
-   * on top of subtype/category. Useful for action cams + mounts where
-   * the activity-tagging is rich. Skip for rows where activity tags
-   * are uniformly assigned (e.g. mics carry vlog/podcast/interview
-   * regardless of broader context — adding `wedding` or `skiing`
-   * would empty the row). Default false: subtypes alone narrow.
-   */
-  useActivityFilter?: boolean;
-};
-
-const ACTIVITY_ROW_TEMPLATES: Record<string, ActivityRowTemplate[]> = {
-  motorcycle: [
-    { title: "Action cameras", categoryToken: "action camera", subtypes: ["cam_action"], useActivityFilter: true, leadCount: 3 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Mounting accessories", categoryToken: "mount", accessoryRole: "mounting", useActivityFilter: true, leadCount: 4 },
-    { title: "Compact drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 5 },
-  ],
-  cycling: [
-    { title: "Action cameras", categoryToken: "action camera", subtypes: ["cam_action"], useActivityFilter: true, leadCount: 3 },
-    { title: "Mounting accessories", categoryToken: "mount", accessoryRole: "mounting", useActivityFilter: true, leadCount: 4 },
-    { title: "Compact drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 4 },
-  ],
-  skiing_snowboarding: [
-    { title: "Rugged action cameras", categoryToken: "action camera", subtypes: ["cam_action"], useActivityFilter: true, leadCount: 4 },
-    { title: "Mounting accessories", categoryToken: "mount", accessoryRole: "mounting", useActivityFilter: true, leadCount: 4 },
-    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-    { title: "Wind-resistant drones", categoryToken: "4k drones", capabilities: ["wind_resistant"], leadCount: 4 },
-  ],
-  surfing: [
-    { title: "Waterproof action cameras", categoryToken: "action camera", subtypes: ["cam_action"], capabilities: ["waterproof"], leadCount: 4 },
-    { title: "Wrist & chest mounts", categoryToken: "mount", accessoryRole: "mounting", useActivityFilter: true, leadCount: 4 },
-    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-  ],
-  watersports: [
-    { title: "Waterproof action cameras", categoryToken: "action camera", subtypes: ["cam_action"], capabilities: ["waterproof"], leadCount: 4 },
-    { title: "Mounting accessories", categoryToken: "mount", accessoryRole: "mounting", useActivityFilter: true, leadCount: 4 },
-    { title: "Protective cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-  ],
-  hiking_outdoor: [
-    { title: "Compact drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 4 },
-    { title: "Rugged action cameras", categoryToken: "action camera", subtypes: ["cam_action"], leadCount: 4 },
-    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 4 },
-  ],
-  /* Body-mounted aerial — paragliding, BASE jumping, wingsuit,
-   * skydiving. The pilot IS the subject; they need a helmet- or
-   * chest-mounted action cam, not a drone (drones are awkward to
-   * fly while flying yourself). Lead with action cam + helmet
-   * mount + chest mount, then cases. The hiking template's
-   * drone-first lead was actively misleading for these queries. */
-  paragliding: [
-    { title: "Rugged action cameras", categoryToken: "action camera", subtypes: ["cam_action"], leadCount: 4 },
-    { title: "Helmet & chest mounts", categoryToken: "mount", accessoryRole: "mounting", leadCount: 4 },
-    { title: "Spare batteries", categoryToken: "battery", subtypes: ["acc_battery"], leadCount: 4 },
-    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-  ],
-  travel: [
-    { title: "Compact drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 5 },
-    { title: "Pocket cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
-    { title: "Lightweight gimbals", categoryToken: "gimbal", subtypes: ["gimbal_compact"], leadCount: 4 },
-    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-  ],
-  vlog: [
-    { title: "Vlogging cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-    { title: "Mini tripods", categoryToken: "tripod", subtypes: ["mount_tripod"], leadCount: 4 },
-  ],
-  podcast: [
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 8 },
-    { title: "Lavalier mics", categoryToken: "microphone", subtypes: ["mic_lavalier"], leadCount: 4 },
-    { title: "Mini tripods", categoryToken: "tripod", subtypes: ["mount_tripod"], leadCount: 4 },
-    { title: "Carrying cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-  ],
-  interview: [
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 8 },
-    { title: "Lavalier mics", categoryToken: "microphone", subtypes: ["mic_lavalier"], leadCount: 4 },
-    { title: "Vlogging cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
-  ],
-  livestream: [
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-    { title: "Vlogging cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
-  ],
-  wedding: [
-    { title: "Cinema drones", categoryToken: "4k drones", subtypes: ["drone_cinema"], leadCount: 3 },
-    { title: "Camera gimbals", categoryToken: "gimbal", subtypes: ["gimbal_camera"], leadCount: 4 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "ND filters", categoryToken: "lens filter", subtypes: ["acc_filter_nd"], leadCount: 4 },
-  ],
-  real_estate_aerial: [
-    { title: "Cinema drones", categoryToken: "4k drones", subtypes: ["drone_cinema"], leadCount: 3 },
-    { title: "Wide-angle lenses", categoryToken: "lens", subtypes: ["acc_lens_wide"], leadCount: 4 },
-    { title: "ND filters", categoryToken: "lens filter", subtypes: ["acc_filter_nd"], leadCount: 4 },
-    { title: "Travel cases", categoryToken: "case", subtypes: ["acc_case"], leadCount: 4 },
-  ],
-  news_journalism: [
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Pocket cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-  ],
-  concert_event: [
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Camera gimbals", categoryToken: "gimbal", subtypes: ["gimbal_camera"], leadCount: 4 },
-    { title: "Compact drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 4 },
-  ],
-  theatre: [
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Camera gimbals", categoryToken: "gimbal", subtypes: ["gimbal_camera"], leadCount: 4 },
-  ],
-  indoor_sports: [
-    { title: "Action cameras", categoryToken: "action camera", subtypes: ["cam_action"], leadCount: 3 },
-    { title: "FPV drones", categoryToken: "4k drones", subtypes: ["drone_fpv"], leadCount: 3 },
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-  ],
-  family: [
-    { title: "Beginner drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 4 },
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-    { title: "Pocket cameras", categoryToken: "action camera", subtypes: ["cam_pocket"], leadCount: 3 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 4 },
-  ],
-  beginner_creator: [
-    { title: "Beginner drones", categoryToken: "4k drones", subtypes: ["drone_compact"], leadCount: 5 },
-    { title: "Easy-to-use action cams", categoryToken: "action camera", subtypes: ["cam_action"], leadCount: 4 },
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 4 },
-  ],
-  professional_filmmaker: [
-    { title: "Cinema drones", categoryToken: "4k drones", subtypes: ["drone_cinema"], leadCount: 4 },
-    { title: "Camera gimbals", categoryToken: "gimbal", subtypes: ["gimbal_camera"], leadCount: 4 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "ND filters", categoryToken: "lens filter", subtypes: ["acc_filter_nd"], leadCount: 4 },
-  ],
-  /* Phone-creator kit — the shopper is shooting on their phone and
-   * needs the stabilizer + mounts + filters + mic stack, not a drone.
-   * The first row sets the corePool via buildPlan's flagshipRow
-   * detection, so Mobile gimbals MUST come first or every tier will
-   * fall back to drones again. The remaining rows feed the accessory
-   * bundle and the PLP category drawers. */
-  phone_photography: [
-    { title: "Mobile gimbals", categoryToken: "gimbal", subtypes: ["gimbal_phone"], leadCount: 4 },
-    { title: "Phone mounts & clamps", categoryToken: "mount", accessoryRole: "mounting", leadCount: 4 },
-    { title: "ND filters & lens kits", categoryToken: "lens filter", subtypes: ["acc_filter_nd"], leadCount: 4 },
-    { title: "Wireless microphones", categoryToken: "microphone", subtypes: ["mic_wireless"], allowBundles: true, leadCount: 6 },
-    { title: "Grips & extension rods", categoryToken: "grip", leadCount: 4 },
-  ],
 };
 
 /**
@@ -752,26 +614,192 @@ export function extractActivitiesFromQuery(query: string | undefined): string[] 
   return out;
 }
 
+/* Monotonic counter shared by the hierarchy row generator's id
+ * minter (`hierarchyRowId`) so each registered runtime spec is
+ * unique even when multiple activities are evaluated in the same
+ * session. */
 let activityRecipeIdCounter = 0;
-function nextActivityRecipeId(activity: string): string {
+
+/* ============================================================
+ * Hierarchy-driven row generation
+ *
+ * `ACTIVITY_HIERARCHIES` (in `src/catalog/activityHierarchies.ts`) is
+ * the single source of truth for what a kit looks like per activity.
+ * `buildActivityRowTemplates(activity, tier)` converts a hierarchy
+ * entry into the same `ActivityRowTemplate[]` shape every consumer
+ * already understands. Tier inclusion rules live in
+ * `TIER_INCLUSION` next to the hierarchy data.
+ *
+ * Adding a new activity is a one-step change: add an entry to
+ * `ACTIVITY_HIERARCHIES`. The keyword-detector pattern in
+ * `ACTIVITY_KEYWORD_PATTERNS` (below) routes the query to that
+ * hierarchy. No row layouts to maintain in two places.
+ * ============================================================ */
+
+/* Stable row id within a single hierarchy → spec conversion. We
+ * include the LEVEL + TIER + activity in the id so the runtime
+ * registry can distinguish a budget-tier row from an ideal-tier row
+ * for the same activity (the PLP `?recipe=<id>` URL always carries
+ * the exact tier the kit was built for). */
+function hierarchyRowId(
+  activity: string,
+  tier: Tier,
+  level: "l1" | "l2" | "l3",
+  index: number,
+): string {
   activityRecipeIdCounter += 1;
-  return `activity-${activity}-${activityRecipeIdCounter}`;
+  return `hier-${activity}-${tier}-${level}-${index}-${activityRecipeIdCounter}`;
+}
+
+/* Title generators for each level. Activity hierarchies don't carry
+ * row titles (they're filter specs), so we synthesize sensible
+ * display labels from the categoryToken + subtypes. Keeps the data
+ * model lean. */
+function titleForFilter(filter: CategoryFilter): string {
+  const subtype = filter.subtypes?.[0];
+  if (subtype) {
+    if (subtype.startsWith("cam_action")) return "Action cameras";
+    if (subtype.startsWith("cam_pocket")) return "Pocket cameras";
+    if (subtype.startsWith("drone_compact")) return "Compact drones";
+    if (subtype.startsWith("drone_cinema")) return "Cinema drones";
+    if (subtype.startsWith("drone_fpv")) return "FPV drones";
+    if (subtype.startsWith("gimbal_phone")) return "Mobile gimbals";
+    if (subtype.startsWith("gimbal_camera")) return "Camera gimbals";
+    if (subtype.startsWith("gimbal_compact")) return "Lightweight gimbals";
+    if (subtype === "mic_wireless") return "Wireless microphones";
+    if (subtype === "mic_lavalier") return "Lavalier microphones";
+    if (subtype === "mic_windscreen") return "Wind protection";
+    if (subtype === "mount_helmet") return "Helmet mounts";
+    if (subtype === "mount_chest") return "Chest mounts";
+    if (subtype === "mount_handlebar") return "Handlebar mounts";
+    if (subtype === "mount_suction") return "Suction mounts";
+    if (subtype === "mount_wrist") return "Wrist mounts";
+    if (subtype === "mount_extension") return "Extension rods & selfie sticks";
+    if (subtype === "mount_tripod") return "Tripods";
+    if (subtype === "mount_clamp") return "Phone clamps";
+    if (subtype === "mount_magnetic") return "Magnetic mounts";
+    if (subtype === "acc_battery") return "Spare batteries";
+    if (subtype === "acc_case") return "Cases & carry";
+    if (subtype === "acc_filter_nd") return "ND filters";
+    if (subtype === "acc_filter_cpl") return "CPL filters";
+    if (subtype === "acc_lens_wide") return "Wide-angle lenses";
+  }
+  /* Fallback: title-case the categoryToken. */
+  return filter.categoryToken.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function filterToActivityRowTemplate(
+  filter: CategoryFilter,
+  title: string,
+  leadCount: number,
+  accessoryRole?: AccessoryRoleKey,
+): ActivityRowTemplate {
+  return {
+    title,
+    categoryToken: filter.categoryToken,
+    ...(filter.subtypes ? { subtypes: filter.subtypes } : {}),
+    ...(filter.capabilities ? { capabilities: filter.capabilities } : {}),
+    ...(accessoryRole ? { accessoryRole } : {}),
+    ...(filter.allowBundles ? { allowBundles: filter.allowBundles } : {}),
+    leadCount,
+  };
 }
 
 /**
- * Build a recipe for a detected activity by composing its row
- * templates with `primaryActivities: [activity]` so the deterministic
- * filter narrows each row to the activity-tagged subset. Specs are
- * registered in the runtime registry so the PLP click handler can
- * resolve them via `?recipe=<id>`.
+ * Build the row templates for an activity at a given tier from the
+ * activity hierarchy. Returns an `ActivityRowTemplate[]` that every
+ * downstream consumer (sidecar, sxs, wingman plan) consumes directly.
+ *
+ * Tier inclusion (see `TIER_INCLUSION` in activityHierarchies.ts):
+ *   - budget : L1 + 0 of L2 + 2 of L3
+ *   - ideal  : L1 + 1 of L2 + 3 of L3
+ *   - top    : L1 + up to 3 of L2 (those whose `tiers` includes "top")
+ *              + 4 of L3
+ *
+ * Returns an empty array when the activity has no hierarchy entry.
+ * Add the activity to `ACTIVITY_HIERARCHIES` to register it.
  */
-function buildActivityRecipe(activity: string): BroadSubTopicSpec[] {
-  const templates = ACTIVITY_ROW_TEMPLATES[activity];
-  if (!templates) return [];
+export function buildActivityRowTemplates(
+  activity: string,
+  tier: Tier = "ideal",
+): ActivityRowTemplate[] {
+  const hierarchy: ActivityHierarchy | undefined = ACTIVITY_HIERARCHIES[activity];
+  if (!hierarchy) return [];
+
+  const inclusion = TIER_INCLUSION[tier];
+  const rows: ActivityRowTemplate[] = [];
+
+  /* L1 — always included. The first row is the FLAGSHIP; the
+   * Wingman plan's core picker keys off this. */
+  rows.push(
+    filterToActivityRowTemplate(
+      hierarchy.primary,
+      titleForFilter(hierarchy.primary),
+      TIER_LEAD_COUNT[tier],
+    ),
+  );
+
+  /* L2 — filter by tier allowlist, capped at `inclusion.secondary`. */
+  let l2Used = 0;
+  for (const sec of hierarchy.secondary) {
+    if (l2Used >= inclusion.secondary) break;
+    const allowedTiers: Tier[] = sec.tiers ?? ["ideal", "top"];
+    if (!allowedTiers.includes(tier)) continue;
+    rows.push(
+      filterToActivityRowTemplate(
+        sec,
+        titleForFilter(sec),
+        4,
+      ),
+    );
+    l2Used += 1;
+  }
+
+  /* L3 — accessory rows in priority order, capped. */
+  for (let i = 0; i < hierarchy.accessories.length && i < inclusion.accessories; i += 1) {
+    const acc: AccessoryHint = hierarchy.accessories[i];
+    rows.push(
+      filterToActivityRowTemplate(
+        acc,
+        titleForFilter(acc),
+        4,
+        acc.accessoryRole as AccessoryRoleKey | undefined,
+      ),
+    );
+  }
+
+  return rows;
+}
+
+/**
+ * Build a recipe for a detected activity by composing its hierarchy
+ * row templates into `BroadSubTopicSpec`s. Specs are registered in
+ * the runtime registry so the PLP click handler can resolve them
+ * via `?recipe=<id>`.
+ *
+ * The optional `tier` parameter lets tier-aware callers (the
+ * Wingman plan) request tier-specific row sets — defaults to
+ * "ideal", which is what non-tier-aware callers (sidecar, sxs)
+ * want. Returns an empty array when the activity isn't registered.
+ */
+function buildActivityRecipe(
+  activity: string,
+  tier: Tier = "ideal",
+): BroadSubTopicSpec[] {
+  const templates = buildActivityRowTemplates(activity, tier);
+  if (templates.length === 0) return [];
+
   const specs: BroadSubTopicSpec[] = [];
-  for (const t of templates) {
+  for (let idx = 0; idx < templates.length; idx += 1) {
+    const t = templates[idx];
+    const id = hierarchyRowId(
+      activity,
+      tier,
+      idx === 0 ? "l1" : idx <= TIER_INCLUSION[tier].secondary ? "l2" : "l3",
+      idx,
+    );
     const spec: BroadSubTopicSpec = {
-      id: nextActivityRecipeId(activity),
+      id,
       title: t.title,
       categoryToken: t.categoryToken,
       ...(t.subtypes ? { subtypes: t.subtypes } : {}),
@@ -779,11 +807,6 @@ function buildActivityRecipe(activity: string): BroadSubTopicSpec[] {
       ...(t.accessoryRole ? { accessoryRole: t.accessoryRole } : {}),
       ...(t.allowBundles ? { allowBundles: t.allowBundles } : {}),
       ...(t.leadCount !== undefined ? { leadCount: t.leadCount } : {}),
-      // Apply the activity AND-filter ONLY when the row template
-      // explicitly opts in. Most rows narrow on subtype + category
-      // alone — applying the activity filter universally would empty
-      // mic / case / filter rows whose activity-tagging is uniform.
-      ...(t.useActivityFilter ? { primaryActivities: [activity] } : {}),
     };
     specs.push(spec);
     RUNTIME_SPECS.set(spec.id, spec);
@@ -802,8 +825,8 @@ function buildActivityRecipe(activity: string): BroadSubTopicSpec[] {
  *     activity detection (which would build a drone-led kit).
  *  2. v6 ACTIVITY KEYWORD detected in the raw query (motorcycle, travel,
  *     podcast, wedding, skiing, surfing, real estate, vlog, …) —
- *     generates a tailored recipe on the fly using
- *     `ACTIVITY_ROW_TEMPLATES`. Activities are checked SECOND so a
+ *     generates a tailored recipe on the fly from
+ *     `ACTIVITY_HIERARCHIES`. Activities are checked SECOND so a
  *     compound query like "gear for travel vlogging" routes to the
  *     `travel` template (which already includes a Lightweight gimbals
  *     row) rather than being short-circuited to the moto-flavoured

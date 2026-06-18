@@ -5,6 +5,12 @@ import {
   enforceAndRankActivityFit,
 } from "../../catalog/activityProfiles";
 import {
+  ACTIVITY_HIERARCHIES,
+  type ActivityHierarchy,
+  type CategoryFilter,
+  type Tier,
+} from "../../catalog/activityHierarchies";
+import {
   buildRowProductsFromSpec,
   extractActivitiesFromQuery,
   pickRecipeForIntent,
@@ -15,6 +21,191 @@ import {
   findAccessoriesFor,
   isAccessoryCompatibleWithAnyCoreStrict,
 } from "../../components/SidecarAssistant/conversation/flow";
+
+/* =============================================================
+ * Hierarchy-driven filtering helpers
+ *
+ * Used to enforce `ActivityHierarchy.exclusions` at every product
+ * filtering step in this file (core pool, accessory bundle, post-
+ * pipeline normalization). Every helper is a no-op when no
+ * hierarchy exists for the active activity, so non-hierarchy
+ * activities continue to use the legacy ranking only.
+ * ============================================================= */
+
+/** Pick the hierarchy for the FIRST detected activity, or `null`
+ *  when none of the detected activities have a registered hierarchy.
+ *  Mirrors the way `pickRecipeForIntent` picks the first hit so
+ *  recipe + planner stay in lockstep. */
+function pickActivityHierarchy(
+  detectedActivities: readonly string[],
+): ActivityHierarchy | null {
+  for (const activity of detectedActivities) {
+    const hit = ACTIVITY_HIERARCHIES[activity];
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Drop products that violate `hierarchy.exclusions`. Pure — caller
+ *  swaps the returned array in. */
+function applyHierarchyExclusions<T extends CatalogProduct>(
+  products: T[],
+  hierarchy: ActivityHierarchy | null,
+): T[] {
+  if (!hierarchy?.exclusions) return products;
+  const { productTypes, subtypes, titleTokens } = hierarchy.exclusions;
+  const forbiddenTypes = productTypes ? new Set<string>(productTypes) : null;
+  const forbiddenSubtypes = subtypes ? new Set<string>(subtypes) : null;
+  const forbiddenTokens =
+    titleTokens && titleTokens.length > 0
+      ? titleTokens.map((t) => t.toLowerCase())
+      : null;
+  if (!forbiddenTypes && !forbiddenSubtypes && !forbiddenTokens) {
+    return products;
+  }
+  return products.filter((p) => {
+    if (forbiddenTypes && p.productType && forbiddenTypes.has(p.productType)) {
+      return false;
+    }
+    if (forbiddenSubtypes) {
+      for (const s of p.subtypes) {
+        if (forbiddenSubtypes.has(s)) return false;
+      }
+    }
+    if (forbiddenTokens) {
+      const lower = p.title.toLowerCase();
+      for (const tok of forbiddenTokens) {
+        if (lower.includes(tok)) return false;
+      }
+    }
+    return true;
+  });
+}
+
+/** Test whether a product matches a `CategoryFilter` (the same
+ *  contract used by `buildRowProductsFromSpec`). Shared between
+ *  `matchesPrimaryFilter` (L1) and `matchesAccessoryHint` (L2/L3). */
+function productMatchesFilter(
+  product: CatalogProduct,
+  filter: CategoryFilter,
+): boolean {
+  if (
+    filter.categoryToken &&
+    !product.category.toLowerCase().includes(filter.categoryToken.toLowerCase())
+  ) {
+    return false;
+  }
+  if (filter.subtypes && filter.subtypes.length > 0) {
+    for (const s of filter.subtypes) {
+      if (!product.subtypes.includes(s)) return false;
+    }
+  }
+  if (filter.capabilities && filter.capabilities.length > 0) {
+    for (const cap of filter.capabilities) {
+      if (!product.useCaseTags.includes(cap)) return false;
+    }
+  }
+  if (filter.titleExcludeAny) {
+    const lower = product.title.toLowerCase();
+    for (const tok of filter.titleExcludeAny) {
+      if (lower.includes(tok.toLowerCase())) return false;
+    }
+  }
+  return true;
+}
+
+/** Reorder + filter an accessory list by hierarchy tier rules:
+ *
+ *  1. Drop accessories that match an L2 enhancer whose `tiers`
+ *     allowlist excludes the current tier (e.g. drop the wireless
+ *     mic from a paragliding budget kit because the L2 entry only
+ *     permits it at ideal/top).
+ *  2. Sort by an L3 priority score so the highest-priority L3
+ *     entries land first. The size-cap step downstream then keeps
+ *     the right accessories.
+ *
+ *  No-op when the activity has no hierarchy. */
+function applyHierarchyTierFilter(
+  accessories: CatalogProduct[],
+  hierarchy: ActivityHierarchy | null,
+  tier: Tier,
+): CatalogProduct[] {
+  if (!hierarchy) return accessories;
+
+  /* L2 tier allowlist check. Build a set of subtype keys whose
+   * presence on a product flags it as "this L2 enhancer is
+   * NOT permitted at this tier". Any product matching such a
+   * pattern gets dropped. */
+  const droppedAccessorySlugs = new Set<string>();
+  for (const sec of hierarchy.secondary) {
+    const allowedTiers: Tier[] = sec.tiers ?? ["ideal", "top"];
+    if (allowedTiers.includes(tier)) continue;
+    for (const product of accessories) {
+      if (productMatchesFilter(product, sec)) {
+        droppedAccessorySlugs.add(product.slug);
+      }
+    }
+  }
+
+  /* L3 priority score. Earlier index = higher priority = lower
+   * score number = appears first after sorting. Accessories that
+   * don't match any L3 entry get a score = accessories.length so
+   * they sort to the end (still kept, just deprioritized). */
+  const scoreFor = (product: CatalogProduct): number => {
+    for (let i = 0; i < hierarchy.accessories.length; i += 1) {
+      if (productMatchesFilter(product, hierarchy.accessories[i])) {
+        return i;
+      }
+    }
+    /* Bonus prioritization: an L2 enhancer permitted at this tier
+     * sorts ahead of unmatched accessories but behind L3 hits.
+     * Lets a wireless mic show up first in the bundle when the
+     * shopper IS at the ideal/top tier. */
+    for (const sec of hierarchy.secondary) {
+      const allowedTiers: Tier[] = sec.tiers ?? ["ideal", "top"];
+      if (!allowedTiers.includes(tier)) continue;
+      if (productMatchesFilter(product, sec)) {
+        return hierarchy.accessories.length;
+      }
+    }
+    return hierarchy.accessories.length + 1;
+  };
+
+  const kept = accessories.filter((p) => !droppedAccessorySlugs.has(p.slug));
+  /* Stable sort by score so equal-score accessories retain the
+   * upstream ranking from `buildAccessoryBundle` /
+   * `enforceAndRankActivityFit`. */
+  return kept
+    .map((product, idx) => ({ product, score: scoreFor(product), idx }))
+    .sort((a, b) => a.score - b.score || a.idx - b.idx)
+    .map(({ product }) => product);
+}
+
+/** Score a candidate against the L1 primary spec — higher = better
+ *  match. Used to find the flagship row when the recipe doesn't
+ *  obviously surface one (or when the recipe was generated by a
+ *  non-hierarchy code path). */
+function matchesPrimaryFilter(
+  product: CatalogProduct,
+  hierarchy: ActivityHierarchy,
+): boolean {
+  return productMatchesFilter(product, hierarchy.primary);
+}
+
+/* Subtype prefixes that DJI's catalog tags as "accessory-class"
+ * via `isAccessory=true`, even when the product is functionally
+ * the headline of the kit (DJI Mic, Osmo Mobile, etc.).
+ * Mic-led / gimbal-led activities specify these in their L1
+ * `primary.subtypes`, and the planner needs to know to keep the
+ * isAccessory=true products in the core pool when so configured. */
+const ACCESSORY_CLASS_PREFIXES = ["mic_", "gimbal_", "mount_", "acc_"] as const;
+
+function hierarchyPrimaryIsAccessoryClass(hierarchy: ActivityHierarchy): boolean {
+  const subtypes = hierarchy.primary.subtypes ?? [];
+  return subtypes.some((s) =>
+    ACCESSORY_CLASS_PREFIXES.some((prefix) => s.startsWith(prefix)),
+  );
+}
 
 /* =============================================================
  * buildPlan — pure, catalog-aware planner for the Wingman Plan page.
@@ -1172,21 +1363,69 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
     };
   }
 
-  /* Core pool = first row whose products include at least one non-
-   * accessory. For activity recipes that lead with a flagship category
-   * (drones / action cams / pocket cams) this naturally lands on the
-   * lead row. If the entire recipe is accessory-flavoured (rare —
-   * e.g. an explicit "ND filter" query), fall back to using the
-   * union of every row so we still have something to anchor combos
-   * around. */
-  const flagshipRow = rows.find((row) =>
-    row.products.some((p) => !p.isAccessory),
-  );
+  /* Resolve the active activity hierarchy (if any) once — used for
+   * (a) flagship row override, (b) core-pool exclusion filtering,
+   * (c) accessory-bundle exclusion filtering further down. When no
+   * hierarchy applies, every helper is a no-op so legacy behaviour
+   * is preserved. */
+  const activityHierarchy = pickActivityHierarchy(detectedActivities);
+
+  /* Core pool. Hierarchy-aware:
+   *  1. PREFER a row whose products match the L1 primary filter.
+   *     The hierarchy explicitly specifies whether the primary IS
+   *     an accessory-class product (mic_*, gimbal_*, etc.) — for
+   *     mic-led activities like podcast / interview / livestream
+   *     / concert / theatre we MUST allow `isAccessory=true`
+   *     products to seed the core pool, since DJI mics and gimbals
+   *     are tagged `isAccessory=true` in the catalog.
+   *  2. Otherwise fall back to the legacy "first row with a
+   *     non-accessory" rule (preserves drone/cam-led behaviour
+   *     for activities without a hierarchy entry).
+   *  3. If even that misses (rare), use the union of every row. */
+  const primaryIsAccessoryClass = activityHierarchy
+    ? hierarchyPrimaryIsAccessoryClass(activityHierarchy)
+    : false;
+  let flagshipRow: typeof rows[number] | undefined;
+  if (activityHierarchy) {
+    flagshipRow = rows.find((row) =>
+      row.products.some((p) => {
+        if (!matchesPrimaryFilter(p, activityHierarchy)) return false;
+        /* Allow accessory-class products through when the L1 IS
+         * accessory-class. */
+        return primaryIsAccessoryClass ? true : !p.isAccessory;
+      }),
+    );
+  }
+  if (!flagshipRow) {
+    flagshipRow = rows.find((row) =>
+      row.products.some((p) => !p.isAccessory),
+    );
+  }
   const corePoolSeed: CatalogProduct[] = flagshipRow
-    ? flagshipRow.products.filter((p) => !p.isAccessory)
+    ? primaryIsAccessoryClass
+      ? flagshipRow.products
+      : flagshipRow.products.filter((p) => !p.isAccessory)
     : rows.flatMap((row) => row.products);
-  let corePool: CatalogProduct[] = corePoolSeed.filter((product) => {
+  /* Apply hierarchy exclusions BEFORE the existing audio-first /
+   * accessory / bundle filters so a forbidden productType (e.g. a
+   * drone in a paragliding kit) is removed even if it would have
+   * otherwise survived the audio-first branch. */
+  const exclusionFilteredSeed = applyHierarchyExclusions(
+    corePoolSeed,
+    activityHierarchy,
+  );
+  let corePool: CatalogProduct[] = exclusionFilteredSeed.filter((product) => {
     if (audioFirst && isAudioPrimaryProduct(product) && !isDroneLikeCore(product)) return true;
+    /* When the activity's L1 primary is accessory-class (mic-led,
+     * gimbal-led activities), we must keep `isAccessory=true` /
+     * `isBundle=true` products in the core pool — they ARE the
+     * core. The L1 `allowBundles: true` hint in the hierarchy is
+     * the explicit opt-in. */
+    if (primaryIsAccessoryClass && activityHierarchy) {
+      const allowBundles = activityHierarchy.primary.allowBundles ?? false;
+      if (product.isBundle && !allowBundles) return false;
+      return matchesPrimaryFilter(product, activityHierarchy);
+    }
     return !product.isAccessory && !product.isBundle;
   });
   if (corePool.length === 0 && hasWatersportSignal(activityConstraints.activities, trimmed)) {
@@ -1200,6 +1439,7 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
       })
       .sort(byRatingDesc)
       .slice(0, 12);
+    corePool = applyHierarchyExclusions(corePool, activityHierarchy);
   }
   if (corePool.length === 0 && audioFirst) {
     corePool = catalog
@@ -1210,12 +1450,37 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
       })
       .sort(byRatingDesc)
       .slice(0, 12);
+    corePool = applyHierarchyExclusions(corePool, activityHierarchy);
   }
   if (corePool.length === 0) {
-    corePool = catalog
-      .filter((product) => !product.isAccessory && !product.isBundle)
-      .sort(byRatingDesc)
-      .slice(0, 12);
+    /* Final-fallback core pool. Hierarchy-aware: if a hierarchy
+     * exists, narrow to products that match the L1 primary filter
+     * before applying the rating sort. This way a paragliding kit
+     * never falls back to a drone-led pool just because the recipe
+     * row resolution came up dry. Accessory-class L1 activities
+     * (mic-led, gimbal-led) keep their `isAccessory=true` /
+     * `isBundle=true` products provided the hierarchy explicitly
+     * opts in via `primary.allowBundles`. */
+    const hierarchyMatches = activityHierarchy
+      ? catalog.filter((p) => {
+          if (!matchesPrimaryFilter(p, activityHierarchy)) return false;
+          if (primaryIsAccessoryClass) {
+            const allowBundles = activityHierarchy.primary.allowBundles ?? false;
+            if (p.isBundle && !allowBundles) return false;
+            return true;
+          }
+          return !p.isAccessory && !p.isBundle;
+        })
+      : [];
+    if (hierarchyMatches.length > 0) {
+      corePool = hierarchyMatches.sort(byRatingDesc).slice(0, 12);
+    } else {
+      corePool = catalog
+        .filter((product) => !product.isAccessory && !product.isBundle)
+        .sort(byRatingDesc)
+        .slice(0, 12);
+      corePool = applyHierarchyExclusions(corePool, activityHierarchy);
+    }
   }
 
   const uniqueCorePool = [...new Map(corePool.map((p) => [p.slug, p])).values()];
@@ -1223,10 +1488,16 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
     waveActivities.length > 0
       ? enforceAndRankActivityFit(uniqueCorePool, trimmed, activityConstraints)
       : [...uniqueCorePool].sort(byRatingDesc);
-  const rankedCoresRaw =
+  const rankedCoresMidAudio =
     audioFirst
       ? rankedCoresPre.filter((product) => !isDroneLikeCore(product))
       : rankedCoresPre;
+  /* One final exclusions pass on the fully-ranked list. The
+   * `applyHierarchyExclusions` helper is idempotent so this is safe
+   * even when the seed was already filtered — and it catches any
+   * stragglers that slipped in via the audio-first or watersport
+   * fallbacks above. */
+  const rankedCoresRaw = applyHierarchyExclusions(rankedCoresMidAudio, activityHierarchy);
   const rankedCores = rankedCoresRaw.length > 0 ? rankedCoresRaw : [...uniqueCorePool].sort(byRatingDesc);
 
   const byTier = {
@@ -1363,15 +1634,33 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
       trimmed,
       BUNDLE_MAX_BY_TIER[id],
     );
-    const sizeNormalized = normalizeTierAccessoryCount(
+    /* Hierarchy-aware tier filter: drops L2 enhancers not allowed
+     * at this tier (e.g. wireless mic on a budget paragliding kit
+     * when the L2 entry only permits ideal/top) and sorts the
+     * remaining accessories by L3 priority so the size cap below
+     * keeps the right ones. No-op when no hierarchy applies. */
+    const tierFiltered = applyHierarchyTierFilter(
       caseGuaranteed,
+      activityHierarchy,
+      id,
+    );
+    const sizeNormalized = normalizeTierAccessoryCount(
+      tierFiltered,
       core,
       catalog,
       id,
     );
-    const tierSizedAccessories = audioFirst
+    const tierSizedRaw = audioFirst
       ? ensureAudioFirstBundleSize(sizeNormalized, core, catalog, id)
       : sizeNormalized;
+    /* Final hierarchy-exclusion pass on accessories. Catches any
+     * forbidden subtype/productType that slipped through the bundler
+     * (e.g. a `mount_handlebar` that gets pulled in for a paragliding
+     * kit because the broader compatibility check approved it). */
+    const tierSizedAccessories = applyHierarchyExclusions(
+      tierSizedRaw,
+      activityHierarchy,
+    );
     const totalPrice =
       (core.price ?? 0) +
       tierSizedAccessories.reduce((sum, accessory) => sum + (accessory.price ?? 0), 0);

@@ -41,7 +41,9 @@ export type ActivityConstraints = {
   disallowedTitleTokens: string[];
 };
 
-const ACTIVITY_PROFILES: ActivityProfile[] = [
+/* Exported for the hierarchy-alignment validator in
+ * `activityHierarchies.ts`. Read-only — do not mutate. */
+export const ACTIVITY_PROFILES: ActivityProfile[] = [
   {
     id: "scuba_diving_snorkeling",
     keywords: [

@@ -72,5 +72,112 @@ export const ACTIVITY_REGRESSION_FIXTURES: ActivityRegressionFixture[] = [
     expectedSignals: ["drone_cinema", "gimbal_camera", "mic_wireless"],
     disallowedSignals: ["motocross", "handlebar"],
   },
+
+  /* ---------- Hierarchy-driven fixtures (one per activity in
+   *  `ACTIVITY_HIERARCHIES`). The activity-profiles fixtures above
+   *  remain because they exercise the older wave-2 ranking pass,
+   *  which is still active. ---------- */
+  {
+    name: "skiing_snowboarding",
+    query: "skiing camera setup",
+    expectedSignals: ["cam_action", "mount_helmet", "rugged"],
+    disallowedSignals: ["mount_handlebar", "underwater"],
+  },
+  {
+    name: "surfing",
+    query: "surfing GoPro alternative",
+    expectedSignals: ["cam_action", "waterproof"],
+    disallowedSignals: ["mount_handlebar", "drone"],
+  },
+  {
+    name: "hiking_outdoor",
+    query: "hiking gear for filming",
+    expectedSignals: ["cam_action", "compact"],
+    disallowedSignals: ["mount_handlebar", "scuba"],
+  },
+  {
+    name: "travel",
+    query: "travel vlogging kit",
+    expectedSignals: ["cam_pocket", "compact"],
+    disallowedSignals: ["mount_handlebar", "scuba"],
+  },
+  {
+    name: "vlog",
+    query: "vlog setup for youtube",
+    expectedSignals: ["cam_pocket", "vlogging"],
+    disallowedSignals: ["scuba", "drone_cinema"],
+  },
+  {
+    name: "podcast",
+    query: "podcast recording at home",
+    expectedSignals: ["mic_wireless"],
+    disallowedSignals: ["drone", "cam_action", "scuba"],
+  },
+  {
+    name: "interview",
+    query: "interview kit for journalism",
+    expectedSignals: ["mic_wireless"],
+    disallowedSignals: ["drone", "scuba", "motocross"],
+  },
+  {
+    name: "livestream",
+    query: "livestream gear for twitch",
+    expectedSignals: ["mic_wireless"],
+    disallowedSignals: ["scuba", "motocross"],
+  },
+  {
+    name: "wedding",
+    query: "wedding videography gear",
+    expectedSignals: ["drone_cinema", "gimbal_camera", "mic_wireless"],
+    disallowedSignals: ["motocross", "scuba"],
+  },
+  {
+    name: "real_estate_aerial",
+    query: "real estate aerial photography",
+    expectedSignals: ["drone_cinema"],
+    disallowedSignals: ["motocross", "scuba"],
+  },
+  {
+    name: "concert_event",
+    query: "concert event recording",
+    expectedSignals: ["mic_wireless"],
+    disallowedSignals: ["drone", "scuba"],
+  },
+  {
+    name: "theatre",
+    query: "theatre performance recording",
+    expectedSignals: ["mic_wireless"],
+    disallowedSignals: ["drone", "cam_action", "scuba"],
+  },
+  {
+    name: "indoor_sports",
+    query: "indoor sports filming gym",
+    expectedSignals: ["cam_action"],
+    disallowedSignals: ["scuba", "underwater housing"],
+  },
+  {
+    name: "family",
+    query: "family vacation video kit",
+    expectedSignals: ["cam_pocket"],
+    disallowedSignals: ["motocross", "scuba"],
+  },
+  {
+    name: "beginner_creator",
+    query: "beginner creator kit",
+    expectedSignals: ["cam_pocket"],
+    disallowedSignals: ["motocross", "scuba"],
+  },
+  {
+    name: "professional_filmmaker",
+    query: "professional filmmaker setup",
+    expectedSignals: ["drone_cinema", "gimbal_camera"],
+    disallowedSignals: ["motocross", "scuba"],
+  },
+  {
+    name: "phone_photography",
+    query: "smartphone photography rig",
+    expectedSignals: ["gimbal_phone"],
+    disallowedSignals: ["drone", "scuba", "motocross"],
+  },
 ];
 
