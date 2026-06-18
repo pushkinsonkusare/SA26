@@ -1947,7 +1947,12 @@
   position: relative;
   width: 74px;
   height: 36px;
-  margin-left: calc(var(--main-pad-x) + 5px);
+  /* `align-self: center` overrides the parent section's
+   * `align-items: flex-start` so this 74px dot wrapper sits in the
+   * horizontal middle of the loading hero, in line with the copy
+   * block below it (which is already centered via its own
+   * `align-self: center`). */
+  align-self: center;
   opacity: 0.96;
   text-align: center;
 }
