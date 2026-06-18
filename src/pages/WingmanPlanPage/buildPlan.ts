@@ -1,4 +1,4 @@
-import type { CatalogProduct, ProductTier } from "../../catalog/catalog";
+import type { CatalogProduct, ProductTier, ProductSubtype } from "../../catalog/catalog";
 import {
   buildActivityConstraints,
   detectActivitiesFromQuery as detectWaveActivities,
@@ -10,6 +10,8 @@ import {
   type CategoryFilter,
   type Tier,
 } from "../../catalog/activityHierarchies";
+import { detectDatasetActivity } from "../../catalog/activityDataset";
+import { buildDatasetCombos } from "./datasetCombos";
 import {
   buildRowProductsFromSpec,
   extractActivitiesFromQuery,
@@ -82,23 +84,32 @@ function applyHierarchyExclusions<T extends CatalogProduct>(
   });
 }
 
-/** Test whether a product matches a `CategoryFilter` (the same
- *  contract used by `buildRowProductsFromSpec`). Shared between
- *  `matchesPrimaryFilter` (L1) and `matchesAccessoryHint` (L2/L3). */
+/** Test whether a product matches a `CategoryFilter`. Subtype-first
+ *  semantics: when `filter.subtypes` is specified, the subtype check
+ *  IS the identity gate — `categoryToken` becomes informational and
+ *  is not enforced. This is necessary because the catalog occasionally
+ *  files a product under a category that doesn't contain the
+ *  obvious token (e.g. selfie sticks tagged `mount_extension` live
+ *  under "Camera grips & sticks", not "Action camera mounts"); the
+ *  subtype tag is the source of truth.
+ *
+ *  When subtypes are NOT specified (e.g. real_estate_aerial's L1
+ *  `{ categoryToken: "4k drones" }`), the categoryToken substring
+ *  match remains the gate. */
 function productMatchesFilter(
   product: CatalogProduct,
   filter: CategoryFilter,
 ): boolean {
-  if (
+  const hasSubtypes = (filter.subtypes?.length ?? 0) > 0;
+  if (hasSubtypes) {
+    for (const s of filter.subtypes!) {
+      if (!product.subtypes.includes(s)) return false;
+    }
+  } else if (
     filter.categoryToken &&
     !product.category.toLowerCase().includes(filter.categoryToken.toLowerCase())
   ) {
     return false;
-  }
-  if (filter.subtypes && filter.subtypes.length > 0) {
-    for (const s of filter.subtypes) {
-      if (!product.subtypes.includes(s)) return false;
-    }
   }
   if (filter.capabilities && filter.capabilities.length > 0) {
     for (const cap of filter.capabilities) {
@@ -121,8 +132,13 @@ function productMatchesFilter(
  *     mic from a paragliding budget kit because the L2 entry only
  *     permits it at ideal/top).
  *  2. Sort by an L3 priority score so the highest-priority L3
- *     entries land first. The size-cap step downstream then keeps
- *     the right accessories.
+ *     entries land first.
+ *  3. Enforce slot diversity — within the priority-sorted list,
+ *     promote AT MOST ONE accessory per L3 entry to the front,
+ *     followed by the rest of the (deprioritized) candidates.
+ *     Without step 3, hiking's pro kit would happily fill all 4
+ *     accessory slots with `mount_extension` products (3 selfie
+ *     sticks + 1 grip) because they all share the same L3 score.
  *
  *  No-op when the activity has no hierarchy. */
 function applyHierarchyTierFilter(
@@ -147,38 +163,115 @@ function applyHierarchyTierFilter(
     }
   }
 
-  /* L3 priority score. Earlier index = higher priority = lower
-   * score number = appears first after sorting. Accessories that
-   * don't match any L3 entry get a score = accessories.length so
-   * they sort to the end (still kept, just deprioritized). */
-  const scoreFor = (product: CatalogProduct): number => {
+  /* Find the index of the FIRST L3 entry the product matches, or -1
+   * if it doesn't match any. Used to bucket products by slot for
+   * the diversity pass below. */
+  const l3SlotFor = (product: CatalogProduct): number => {
     for (let i = 0; i < hierarchy.accessories.length; i += 1) {
-      if (productMatchesFilter(product, hierarchy.accessories[i])) {
-        return i;
-      }
+      if (productMatchesFilter(product, hierarchy.accessories[i])) return i;
     }
-    /* Bonus prioritization: an L2 enhancer permitted at this tier
-     * sorts ahead of unmatched accessories but behind L3 hits.
-     * Lets a wireless mic show up first in the bundle when the
-     * shopper IS at the ideal/top tier. */
+    return -1;
+  };
+
+  /* Find an L2 slot the product matches AND is permitted at the
+   * current tier. Used when sorting the deprioritized tail. */
+  const matchesPermittedL2 = (product: CatalogProduct): boolean => {
     for (const sec of hierarchy.secondary) {
       const allowedTiers: Tier[] = sec.tiers ?? ["ideal", "top"];
       if (!allowedTiers.includes(tier)) continue;
-      if (productMatchesFilter(product, sec)) {
-        return hierarchy.accessories.length;
-      }
+      if (productMatchesFilter(product, sec)) return true;
     }
-    return hierarchy.accessories.length + 1;
+    return false;
   };
 
   const kept = accessories.filter((p) => !droppedAccessorySlugs.has(p.slug));
-  /* Stable sort by score so equal-score accessories retain the
-   * upstream ranking from `buildAccessoryBundle` /
-   * `enforceAndRankActivityFit`. */
-  return kept
-    .map((product, idx) => ({ product, score: scoreFor(product), idx }))
-    .sort((a, b) => a.score - b.score || a.idx - b.idx)
-    .map(({ product }) => product);
+
+  /* Bucket products by L3 slot index. Within each slot the
+   * upstream ordering (rating / activity fit) is preserved, so
+   * "the best mount_extension" naturally lands first inside its
+   * slot and gets promoted by the diversity pass. */
+  const slotBuckets: CatalogProduct[][] = hierarchy.accessories.map(() => []);
+  const l2Tail: CatalogProduct[] = [];
+  const looseTail: CatalogProduct[] = [];
+  for (const product of kept) {
+    const slot = l3SlotFor(product);
+    if (slot >= 0) {
+      slotBuckets[slot].push(product);
+    } else if (matchesPermittedL2(product)) {
+      l2Tail.push(product);
+    } else {
+      looseTail.push(product);
+    }
+  }
+
+  /* Diversity pass: take AT MOST ONE accessory per L3 slot. The
+   * actual one-per-slot guarantee is enforced LATER by
+   * `enforceSlotDiversity` after the size-normalize step (which
+   * refills from the broader catalog and can re-introduce
+   * duplicates). This pass just orders the front of the list so
+   * the size cap downstream picks diverse items first.
+   *
+   * The user-visible bug this prevents: hiking pro kit filling
+   * 3 of 5 slots with `mount_extension` products (selfie sticks)
+   * just because the catalog has 3 of them. */
+  const promoted: CatalogProduct[] = [];
+  const slotLeftovers: CatalogProduct[] = [];
+  for (const bucket of slotBuckets) {
+    if (bucket.length === 0) continue;
+    promoted.push(bucket[0]);
+    if (bucket.length > 1) slotLeftovers.push(...bucket.slice(1));
+  }
+
+  /* Final order:
+   *  1. promoted   — one per L3 slot (the diverse core of the kit)
+   *  2. l2Tail     — L2 enhancers permitted at this tier
+   *  3. looseTail  — accessories that didn't match L3 or permitted L2
+   *  4. slotLeftovers — additional same-slot candidates (last resort) */
+  return [...promoted, ...l2Tail, ...looseTail, ...slotLeftovers];
+}
+
+/** Enforce one-accessory-per-L3-slot at the END of the pipeline.
+ *  Slot identity is determined by the product's PRIMARY subtype
+ *  (the first entry in `product.subtypes`) — DJI's catalog tags
+ *  multi-purpose mounts with `mount_extension` as a SECONDARY
+ *  subtype (e.g. the Magnetic Ball Joint Mount has subtypes
+ *  `[mount_magnetic, mount_extension]`), so matching by ANY subtype
+ *  would conflate distinct products. Primary-subtype matching
+ *  treats the magnetic mount as `mount_magnetic` (no L3 slot for
+ *  hiking) and the actual selfie sticks as `mount_extension` (L3
+ *  slot 1) — giving the kit one of each instead of three selfie
+ *  sticks crowded into the same slot. */
+function enforceSlotDiversity(
+  accessories: CatalogProduct[],
+  hierarchy: ActivityHierarchy | null,
+): CatalogProduct[] {
+  if (!hierarchy || hierarchy.accessories.length === 0) return accessories;
+  const seenSlots = new Set<number>();
+  const out: CatalogProduct[] = [];
+  for (const product of accessories) {
+    const primarySubtype = product.subtypes[0];
+    let slot = -1;
+    if (primarySubtype) {
+      for (let i = 0; i < hierarchy.accessories.length; i += 1) {
+        const filterSubtypes = hierarchy.accessories[i].subtypes;
+        if (filterSubtypes && filterSubtypes.includes(primarySubtype)) {
+          slot = i;
+          break;
+        }
+      }
+    }
+    if (slot === -1) {
+      /* Doesn't map to any L3 slot via primary subtype — keep as-is
+       * (loose-tail product, e.g. ND filters or magnetic mounts on
+       * a hiking kit). */
+      out.push(product);
+      continue;
+    }
+    if (seenSlots.has(slot)) continue;
+    seenSlots.add(slot);
+    out.push(product);
+  }
+  return out;
 }
 
 /** Score a candidate against the L1 primary spec — higher = better
@@ -246,8 +339,18 @@ export type Combo = {
   badgeTone: ComboBadgeTone;
   /** Hero/core product anchoring the combo. */
   core: CatalogProduct;
-  /** 0-6 accessories returned by `buildAccessoryBundle`. */
+  /** Secondary core-class DJI products (mostly Audio) the dataset
+   *  pairs with the core. Empty for the cost-effective tier and for
+   *  the legacy hierarchy fallback. Rendered folded into the
+   *  accessory rail but tracked separately for labelling. */
+  secondary?: CatalogProduct[];
+  /** 0-6 accessories. In the dataset path the secondary products are
+   *  prepended here so the rail renders them; `secondary` retains the
+   *  distinction. */
   accessories: CatalogProduct[];
+  /** Per-kit "why this kit" prose. Templated by the deterministic
+   *  planner; upgraded by the LLM when configured. */
+  reasoning?: string;
   /** core.price + sum(accessory.price). 0 when prices are missing. */
   totalPrice: number;
 };
@@ -287,6 +390,11 @@ export type PlanResult = {
   combos: Combo[];
   /** One accordion per non-empty recipe row. */
   categories: CategoryAccordion[];
+  /** Activity-level summary shown above the kit tabs. Templated by
+   *  the deterministic planner; upgraded by the LLM when configured.
+   *  Undefined for the legacy hierarchy path (page falls back to the
+   *  subhead). */
+  activitySummary?: string;
   /** False when the query is empty OR when the catalog produced zero
    * usable cores AND zero category rows. Page renders an empty state. */
   hasResults: boolean;
@@ -693,16 +801,18 @@ const COMBO_COPY: Record<WingmanComboTier, ComboCopy> = {
 };
 
 const TIER_TOTAL_MIN: Record<WingmanComboTier, number> = {
-  // Total products includes core + accessories.
-  budget: 3,
-  ideal: 4,
-  top: 7,
+  // Total products includes core + accessories. Retuned to the v2
+  // spec composition (Cost Effective = core + 1; Ideal = core +
+  // secondary + 2; Pro = core + 1-2 secondary + 3-4).
+  budget: 2,
+  ideal: 3,
+  top: 5,
 };
 
 const TIER_TOTAL_MAX: Record<WingmanComboTier, number> = {
-  budget: 4,
-  ideal: 5,
-  top: 8,
+  budget: 3,
+  ideal: 4,
+  top: 7,
 };
 
 const BUNDLE_MAX_BY_TIER: Record<WingmanComboTier, number> = {
@@ -1657,8 +1767,18 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
      * forbidden subtype/productType that slipped through the bundler
      * (e.g. a `mount_handlebar` that gets pulled in for a paragliding
      * kit because the broader compatibility check approved it). */
-    const tierSizedAccessories = applyHierarchyExclusions(
+    const exclusionFiltered = applyHierarchyExclusions(
       tierSizedRaw,
+      activityHierarchy,
+    );
+    /* Final slot-diversity pass: drops same-L3-slot duplicates that
+     * the refill step in `normalizeTierAccessoryCount` may have
+     * pulled in via `findAccessoriesFor` (which is slot-blind). The
+     * kit ends up with at most ONE product per L3 entry — fewer
+     * accessories total when the catalog can't supply diversity, but
+     * never three selfie sticks in a hiking pro kit. */
+    const tierSizedAccessories = enforceSlotDiversity(
+      exclusionFiltered,
       activityHierarchy,
     );
     const totalPrice =
@@ -1684,14 +1804,28 @@ export function buildPlan(query: string, catalog: CatalogProduct[]): PlanResult 
     products: row.products,
   }));
 
+  /* Dataset override. When the query maps to a training-dataset
+   * activity AND every tier resolves to a real catalog core, the
+   * dataset-driven combos replace the hierarchy combos as the
+   * routing authority. The hierarchy combos above still ran (cheap,
+   * pure) and remain the fallback when the dataset can't resolve.
+   * Category accordions + hero copy are kept from the existing
+   * pipeline. */
+  const datasetMatch = detectDatasetActivity(trimmed);
+  const datasetResult = datasetMatch ? buildDatasetCombos(datasetMatch, catalog) : null;
+  const finalCombos = datasetResult ? datasetResult.combos : combos;
+  const activitySummary = datasetResult?.activitySummary;
+
   return {
     headline: buildHeroHeadline(trimmed, audioFirst, detectedActivities),
     rawQuery: trimmed,
     ...pickHero(trimmed, detectedActivities),
     detectedActivities,
-    combos,
+    combos: finalCombos,
     categories,
-    hasResults: combos.length > 0 && categories.length > 0,
+    activitySummary,
+    hasResults:
+      finalCombos.length > 0 && (categories.length > 0 || datasetResult !== null),
   };
 }
 

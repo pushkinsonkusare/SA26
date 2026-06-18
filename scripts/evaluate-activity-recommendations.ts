@@ -19,6 +19,13 @@ import {
   type ActivityHierarchy,
 } from "../src/catalog/activityHierarchies";
 import { extractActivitiesFromQuery } from "../src/components/SideBySideAssistant/conversation/broadRecipes";
+import {
+  DATASET_ACTIVITIES,
+  detectDatasetActivity,
+  getTierRows,
+  type DatasetTier,
+  type PrimaryFamily,
+} from "../src/catalog/activityDataset";
 
 type LaneResult = {
   passed: boolean;
@@ -398,7 +405,116 @@ function printBuildPlanResult(result: BuildPlanResult) {
   }
 }
 
+/* =============================================================
+ * Dataset lane — the canonical gate.
+ *
+ * For every activity in the training dataset, drive buildPlan with
+ * the activity name as the query and assert the dataset contract:
+ *   - the query detects to that same activity
+ *   - each tier's core matches the dataset Primary_Family
+ *   - Ideal + Pro carry at least one secondary product
+ *   - every combo has at least one accessory
+ *   - Water kits include a waterproof case
+ *   - no kit contains a forbidden product type for the environment
+ * ============================================================= */
+
+type DatasetLaneResult = {
+  activity: string;
+  passed: boolean;
+  reasons: string[];
+  cores: string[];
+};
+
+function familyMatches(core: (typeof catalogStore.products)[number], family: PrimaryFamily): boolean {
+  switch (family) {
+    case "Drone":
+      return (
+        core.productTypeGroup === "drone" ||
+        core.subtypes.some((s) => s.startsWith("drone_"))
+      );
+    case "Action":
+      return core.subtypes.includes("cam_action");
+    case "Pocket":
+      return core.subtypes.includes("cam_pocket");
+    default:
+      return true;
+  }
+}
+
+function isWaterproofCaseProduct(p: (typeof catalogStore.products)[number]): boolean {
+  return (
+    p.subtypes.includes("acc_case") &&
+    (p.useCaseTags.includes("waterproof") || p.useCaseTags.includes("underwater"))
+  );
+}
+
+function evaluateDatasetActivity(activity: string): DatasetLaneResult {
+  const reasons: string[] = [];
+  const query = activity; // activity name doubles as a representative query
+  const match = detectDatasetActivity(query);
+  if (!match || match.activity !== activity) {
+    reasons.push(`detection mismatch: "${query}" -> ${match?.activity ?? "(none)"}`);
+  }
+  const tierRows = getTierRows(activity);
+  const plan = buildPlan(query, catalogStore.products);
+  const byId = new Map(plan.combos.map((c) => [c.id, c] as const));
+  const cores: string[] = [];
+
+  const tiers: DatasetTier[] = ["budget", "ideal", "top"];
+  for (const tier of tiers) {
+    const combo = byId.get(tier);
+    if (!combo) {
+      reasons.push(`${tier}: missing combo`);
+      continue;
+    }
+    cores.push(`${tier}=${combo.core.title}`);
+    const expectedFamily = tierRows?.[tier].primaryFamily;
+    if (expectedFamily && !familyMatches(combo.core, expectedFamily)) {
+      reasons.push(`${tier}: core "${combo.core.title}" is not family ${expectedFamily}`);
+    }
+    if ((tier === "ideal" || tier === "top") && (combo.secondary?.length ?? 0) === 0) {
+      reasons.push(`${tier}: missing secondary product`);
+    }
+    if (combo.accessories.length === 0) {
+      reasons.push(`${tier}: zero accessories`);
+    }
+    if (match?.environment === "Water" && !combo.accessories.some(isWaterproofCaseProduct)) {
+      reasons.push(`${tier}: water kit lacks a waterproof case`);
+    }
+    /* Real-drone detection keys on the functional drone_* subtype,
+     * NOT productTypeGroup — the catalog mistags some storage cases
+     * ("Drone Mini Case") as productType drone. */
+    if (
+      (match?.environment === "Water" || match?.environment === "Air") &&
+      !combo.core.subtypes.some((s) => s.startsWith("drone_")) &&
+      combo.accessories.some((a) => a.subtypes.some((s) => s.startsWith("drone_")))
+    ) {
+      reasons.push(`${tier}: ${match?.environment} kit contains a drone accessory`);
+    }
+  }
+
+  return { activity, passed: reasons.length === 0, reasons, cores };
+}
+
 function main() {
+  const datasetResults = DATASET_ACTIVITIES.map(evaluateDatasetActivity);
+  const datasetPassed = datasetResults.filter((r) => r.passed).length;
+  const datasetTotal = datasetResults.length;
+
+  // eslint-disable-next-line no-console
+  console.log(`\nDataset lane: ${datasetPassed}/${datasetTotal} activities passed`);
+  for (const r of datasetResults) {
+    const status = r.passed ? "PASS" : "FAIL";
+    // eslint-disable-next-line no-console
+    console.log(`  [${status}] ${r.activity} — ${r.cores.join(" | ")}`);
+    for (const reason of r.reasons) {
+      // eslint-disable-next-line no-console
+      console.log(`      -> ${reason}`);
+    }
+  }
+  // eslint-disable-next-line no-console
+  console.log("");
+
   const legacyResults = ACTIVITY_REGRESSION_FIXTURES.map((fixture) =>
     evaluateFixture(
       fixture.query,
@@ -434,10 +550,13 @@ function main() {
     console.log("");
   }
 
-  /* The buildPlan lane is the canonical regression gate going
-   * forward — it tests the user-facing kit picker. Legacy lane is
-   * kept for backwards visibility but not enforced. */
-  if (planPassed !== total) process.exitCode = 1;
+  /* The DATASET lane is the canonical regression gate now — it tests
+   * the dataset-driven routing that the user-facing kit picker uses.
+   * The legacy + hierarchy buildPlan lanes are kept for visibility
+   * (they assert the OLD hierarchy contract, which the dataset
+   * intentionally overrides for covered activities) but are not
+   * enforced. */
+  if (datasetPassed !== datasetTotal) process.exitCode = 1;
 }
 
 main();

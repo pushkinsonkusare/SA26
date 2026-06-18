@@ -392,6 +392,10 @@ type WingmanPlanCombosProps = {
    * string when no activity was detected. */
   primaryActivity: string | undefined;
   isAudioFirstIntent: boolean;
+  /* Activity-level summary (dataset/LLM-authored) shown under the
+   * "Choose your starting kit" heading. Falls back to static copy
+   * when absent. */
+  activitySummary?: string;
   /* Triggered when the shopper hits the X on an accessory tile. The
    * page-level handler owns the "remove this slug from this tier"
    * mutation so the modification persists if the shopper switches
@@ -424,6 +428,7 @@ function WingmanPlanCombos({
   onChange,
   primaryActivity,
   isAudioFirstIntent,
+  activitySummary,
   onRemoveAccessory,
   removingSlug,
   restoringSlugs,
@@ -471,9 +476,11 @@ function WingmanPlanCombos({
               Choose your starting kit
             </h2>
             <p className="wingman-plan-page__combos-subtitle">
-              {isAudioFirstIntent
-                ? "Take a look at these audio-first kits we have created for your recording workflow"
-                : "Take a look at these custom combos we have created for your adventure"}
+              {activitySummary
+                ? activitySummary
+                : isAudioFirstIntent
+                  ? "Take a look at these audio-first kits we have created for your recording workflow"
+                  : "Take a look at these custom combos we have created for your adventure"}
             </p>
           </header>
 
@@ -818,7 +825,7 @@ function ComboSidebar({
           </div>
         </div>
         <p className="wingman-plan-page__sidebar-description">
-          {getTierKitDescription(combo.id, isAudioFirstIntent)}
+          {combo.reasoning ?? getTierKitDescription(combo.id, isAudioFirstIntent)}
         </p>
       </div>
 
@@ -2137,6 +2144,7 @@ export default function WingmanPlanPage() {
                   onChange={setActiveCombo}
                   primaryActivity={plan.detectedActivities[0]}
                   isAudioFirstIntent={isAudioFirstIntent}
+                  activitySummary={plan.activitySummary}
                   onRemoveAccessory={handleRemoveRequest}
                   removingSlug={removingSlug}
                   restoringSlugs={restoringSlugs}
