@@ -91,6 +91,11 @@ type WingmanChatBarProps = {
   onRestoreInActiveKit: (slugs: string[]) => void;
   onAcceptBundleSuggestions: (productSlug: string) => void;
   onDeclineBundleSuggestions: () => void;
+  /** Answer a free-text question about the current product selection,
+   * built from catalog data. Returns the answer string when the message
+   * is a product question and there's a selection, or null to let the
+   * message flow to the normal steering path. */
+  onAskAboutSelection?: (question: string) => string | null;
   /** Context-aware Next Best Actions for the current pill selection.
    * Rendered as a row of chips directly below the pills. Empty when
    * nothing is selected. */
@@ -131,6 +136,7 @@ export function WingmanChatBar({
   onRestoreInActiveKit,
   onAcceptBundleSuggestions,
   onDeclineBundleSuggestions,
+  onAskAboutSelection,
   nbas,
 }: WingmanChatBarProps) {
   const { navigate } = usePrototypeNavigation();
@@ -410,6 +416,22 @@ export function WingmanChatBar({
       return;
     }
 
+    /* Contextual product Q&A. When the shopper has product(s) selected
+     * and typed a question, answer it from catalog data instead of
+     * steering the plan. A non-null answer short-circuits before the
+     * context guard so a question never trips the "create a new plan?"
+     * prompt. */
+    const selectionAnswer = onAskAboutSelection?.(text);
+    if (selectionAnswer) {
+      clearPendingSwitchProposal();
+      setIsReplying(true);
+      window.setTimeout(() => {
+        appendMessage("assistant", selectionAnswer);
+        setIsReplying(false);
+      }, REPLY_DELAY_MS);
+      return;
+    }
+
     if (contextCheck.kind === "switch_required") {
       const confirmMessage =
         "This sounds outside the current plan. Want me to create a new plan for it?";
@@ -441,6 +463,7 @@ export function WingmanChatBar({
     activeKitLabel,
     onRemoveFromActiveKit,
     onRestoreInActiveKit,
+    onAskAboutSelection,
   ]);
 
   const handleClearThread = useCallback(() => {
@@ -549,6 +572,16 @@ export function WingmanChatBar({
     micLabel = speech.isSupported
       ? "Start voice input"
       : "Voice input unsupported in this browser";
+  }
+
+  /* When a selection exists, hint that the input is now contextual to
+   * the picked product(s) so the shopper knows they can ask about them
+   * in natural language. Falls back to the default prompt otherwise. */
+  let contextualPlaceholder = PLACEHOLDER;
+  if (selectedProducts.length === 1) {
+    contextualPlaceholder = `Ask about ${selectedProducts[0].title}\u2026`;
+  } else if (selectedProducts.length > 1) {
+    contextualPlaceholder = `Ask about your ${selectedProducts.length} selected products\u2026`;
   }
 
   const sendDisabled = inputValue.trim().length === 0;
@@ -788,7 +821,7 @@ export function WingmanChatBar({
             <textarea
               ref={inputRef}
               className="wingman-chat-bar__textarea"
-              placeholder={isListening ? "Listening\u2026" : PLACEHOLDER}
+              placeholder={isListening ? "Listening\u2026" : contextualPlaceholder}
               aria-label="Message Wingman"
               value={inputValue}
               onFocus={() => setIsFocused(true)}

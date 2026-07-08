@@ -47,9 +47,14 @@ import { useKitRationales } from "./useKitRationales";
 import type { KitRationale } from "./kitRationale";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 import { KitComparePanel } from "./KitComparePanel";
+import { ProductReviewsPanel } from "./ProductReviewsPanel";
 import { WingmanChatBar } from "./WingmanChatBar";
 import { buildCustomCombo } from "./buildCustomCombo";
-import { resolveSelectionNbas } from "./wingmanNba";
+import {
+  answerProductQuestion,
+  isProductQuestion,
+  resolveSelectionNbas,
+} from "./wingmanNba";
 import type { KitAccessory } from "./parseKitCommands";
 import { buildAccessoryBundle } from "../../components/SidecarAssistant/conversation/flow";
 import {
@@ -2227,6 +2232,13 @@ export default function WingmanPlanPage() {
     CatalogProduct[] | null
   >(null);
 
+  /* Product whose reviews panel (YouTube videos + text reviews) is
+   * open. Null when the panel is closed. Opened by the "View reviews"
+   * selection NBA. */
+  const [reviewsProduct, setReviewsProduct] = useState<CatalogProduct | null>(
+    null,
+  );
+
   /* Append the shopper's NBA question immediately, then the templated
    * Wingman answer on a short delay so the exchange reads as a genuine
    * back-and-forth. The chat bar reopens its thread on the same click,
@@ -2237,6 +2249,29 @@ export default function WingmanPlanPage() {
       appendMessage("assistant", answer);
     }, NBA_REPLY_DELAY_MS);
   }, []);
+
+  /* Free-text product Q&A. When the shopper has product(s) selected and
+   * types a question-like message, answer it from the selected
+   * product(s)' catalog data instead of steering the plan. Returns null
+   * to let the chat bar fall through to its existing steering path
+   * (non-question text, or no selection). With multiple picks, produce
+   * one combined reply with a labeled answer per product. */
+  const resolveSelectionAnswer = useCallback(
+    (question: string): string | null => {
+      if (!isProductQuestion(question)) return null;
+      const resolved = selectedProducts
+        .map((p) => products.find((cp) => cp.slug === p.slug))
+        .filter((p): p is CatalogProduct => Boolean(p));
+      if (resolved.length === 0) return null;
+      if (resolved.length === 1) {
+        return answerProductQuestion(resolved[0], question);
+      }
+      return resolved
+        .map((p) => `${p.title}: ${answerProductQuestion(p, question)}`)
+        .join("\n\n");
+    },
+    [selectedProducts, products],
+  );
 
   /* NBA "Remove this/these": drop the slug(s) from the active kit (via
    * the shared remove animation) AND untick them from the selection so
@@ -2334,6 +2369,7 @@ export default function WingmanPlanPage() {
         addToKit: handleAddToKit,
         swapForBetter: handleSwapForBetter,
         compareProducts: setCompareProducts,
+        viewReviews: setReviewsProduct,
       },
     );
   }, [
@@ -2484,6 +2520,7 @@ export default function WingmanPlanPage() {
         onRestoreInActiveKit={handleImmediateChatRestore}
         onAcceptBundleSuggestions={handleAcceptProactiveSuggestions}
         onDeclineBundleSuggestions={handleDeclineProactiveSuggestions}
+        onAskAboutSelection={resolveSelectionAnswer}
         nbas={selectionNbas}
       />
       {/* Side-by-side comparison — a routine, non-chat surface opened by
@@ -2495,6 +2532,15 @@ export default function WingmanPlanPage() {
         products={compareProducts}
         onClose={() => setCompareProducts(null)}
         onAddToBundle={handleAddToCustomBundle}
+      />
+      {/* Reviews — a routine, non-chat surface opened by the "View
+       * reviews" selection NBA. Reuses the KitDetailsPanel slide-in
+       * chrome (and its backdrop class, so the chat bar dims via the
+       * shared body:has(...) rule). YouTube videos + text reviews. */}
+      <ProductReviewsPanel
+        product={reviewsProduct}
+        onClose={() => setReviewsProduct(null)}
+        onAddToCustomBundle={handleAddToCustomBundle}
       />
     </div>
   );

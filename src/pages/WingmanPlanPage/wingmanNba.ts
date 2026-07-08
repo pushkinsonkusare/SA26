@@ -53,6 +53,10 @@ export type WingmanNbaDeps = {
    * Comparison is a routine feature, so it opens a dedicated tabular
    * surface rather than dropping a text summary into the chat. */
   compareProducts: (products: CatalogProduct[]) => void;
+  /** Open the reviews panel (YouTube videos + text reviews) for a
+   * single product. Like comparison, a routine surface rather than a
+   * chat exchange. */
+  viewReviews: (product: CatalogProduct) => void;
 };
 
 /**
@@ -503,6 +507,11 @@ export function resolveSelectionNbas(
           run: () => deps.removeFromKit([product.slug]),
         });
       }
+      items.push({
+        id: `reviews-${product.slug}`,
+        label: "View reviews",
+        run: () => deps.viewReviews(product),
+      });
       return items;
     }
 
@@ -526,6 +535,11 @@ export function resolveSelectionNbas(
         run: () => deps.askInChat(faq.question, faq.answer),
       });
     }
+    items.push({
+      id: `reviews-${product.slug}`,
+      label: "View reviews",
+      run: () => deps.viewReviews(product),
+    });
     return items;
   }
 

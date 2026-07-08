@@ -15,6 +15,12 @@ interface ImportMetaEnv {
    *  build (GitHub Pages) so the API key isn't shipped in the
    *  browser bundle. Leave unset for local dev with `.env.local`. */
   readonly VITE_LLM_PROXY_URL?: string;
+  /** YouTube Data API v3 key used by the product reviews panel's
+   *  "Videos" tab to search live review videos. Ships in the browser
+   *  bundle, so restrict it by HTTP referrer in the Google Cloud
+   *  console. When unset, the Videos tab shows a YouTube search link
+   *  fallback instead of an embedded player. */
+  readonly VITE_YOUTUBE_API_KEY?: string;
 }
 
 interface ImportMeta {
