@@ -373,7 +373,7 @@
 .wingman-plan-page__combos-card {
   background: #ffffff;
   border: 1px solid #e3e3e3;
-  border-radius: 24px;
+  border-radius: 20px;
   padding: 32px 24px 24px;
   display: flex;
   flex-direction: column;
@@ -385,8 +385,8 @@
 .wingman-plan-page__combos-header {
   display: flex;
   flex-direction: column;
-  /* 24px between the title and the subtitle. */
-  gap: 24px;
+  /* 16px between the title and the subtitle. */
+  gap: 16px;
   /* Centered header matches the "Choose your starting kit" hero
    * pattern from the design — title and subtitle stack on the
    * vertical axis of the card, not flush-left against it. */
@@ -3154,9 +3154,9 @@
    * it reads as a panel over the dimmed page rather than a flush
    * drawer. Sits ABOVE the header so the overlay is on top of
    * everything. */
-  top: 24px;
-  right: 24px;
-  bottom: 24px;
+  top: 20px;
+  right: 20px;
+  bottom: 20px;
   width: min(560px, calc(100vw - 48px));
   background: #ffffff;
   z-index: 1101;
