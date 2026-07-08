@@ -25,6 +25,7 @@ import {
   resolveRemoveCommand,
   type KitAccessory,
 } from "./parseKitCommands";
+import type { WingmanNbaItem } from "./wingmanNba";
 import {
   appendMessage,
   clearPendingBundleSuggestion,
@@ -38,6 +39,11 @@ import {
   latestExchange,
   subscribe,
 } from "./wingmanChatStore";
+import {
+  getSnapshot as getSelectionSnapshot,
+  removeSelection,
+  subscribe as subscribeSelection,
+} from "./wingmanSelectionStore";
 import "./WingmanChatBar.css";
 
 /**
@@ -83,6 +89,10 @@ type WingmanChatBarProps = {
   onRestoreInActiveKit: (slugs: string[]) => void;
   onAcceptBundleSuggestions: (productSlug: string) => void;
   onDeclineBundleSuggestions: () => void;
+  /** Context-aware Next Best Actions for the current pill selection.
+   * Rendered as a row of chips directly below the pills. Empty when
+   * nothing is selected. */
+  nbas: WingmanNbaItem[];
 };
 
 /* Small artificial delay before the assistant reply appears, so the
@@ -119,6 +129,7 @@ export function WingmanChatBar({
   onRestoreInActiveKit,
   onAcceptBundleSuggestions,
   onDeclineBundleSuggestions,
+  nbas,
 }: WingmanChatBarProps) {
   const { navigate } = usePrototypeNavigation();
   const speech = useSpeechRecognition();
@@ -146,6 +157,14 @@ export function WingmanChatBar({
     subscribe,
     getPendingBundleSuggestionSnapshot,
     getPendingBundleSuggestionSnapshot,
+  );
+  /* Products the shopper has ticked via the tile checkboxes. Surfaced
+   * as compact pills directly above the input so they can gather a
+   * few items and then ask Wingman about them together. */
+  const selectedProducts = useSyncExternalStore(
+    subscribeSelection,
+    getSelectionSnapshot,
+    getSelectionSnapshot,
   );
   /* Brief window between user-message append and assistant-reply
    * append, used to render a "thinking…" indicator in the assistant
@@ -461,6 +480,15 @@ export function WingmanChatBar({
     clearPendingBundleSuggestion();
   }, [pendingBundleSuggestion, onAcceptBundleSuggestions]);
 
+  /* Fire a selection Next Best Action. Reopen the thread first so the
+   * question + answer the action appends are visible immediately even
+   * if the previous exchange had auto-collapsed away. */
+  const handleNbaClick = useCallback((item: WingmanNbaItem) => {
+    setThreadCollapsed(false);
+    setIsCollapsing(false);
+    item.run();
+  }, []);
+
   const handleMicClick = useCallback(() => {
     if (isListening) {
       speech.stop();
@@ -565,6 +593,19 @@ export function WingmanChatBar({
             aria-live="polite"
             aria-relevant="additions"
           >
+            {/* Chat pattern: the shopper's question sits above the
+             * assistant's answer (question first, reply below). */}
+            {exchange.user ? (
+              <div className="wingman-chat-bar__bubble-row wingman-chat-bar__bubble-row--user">
+                <div
+                  className="wingman-chat-bar__bubble wingman-chat-bar__bubble--user"
+                >
+                  <p className="wingman-chat-bar__bubble-text">
+                    {exchange.user.text}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             {showAssistantBubble ? (
               <div
                 className="wingman-chat-bar__bubble wingman-chat-bar__bubble--assistant"
@@ -624,17 +665,6 @@ export function WingmanChatBar({
                 ) : null}
               </div>
             ) : null}
-            {exchange.user ? (
-              <div className="wingman-chat-bar__bubble-row wingman-chat-bar__bubble-row--user">
-                <div
-                  className="wingman-chat-bar__bubble wingman-chat-bar__bubble--user"
-                >
-                  <p className="wingman-chat-bar__bubble-text">
-                    {exchange.user.text}
-                  </p>
-                </div>
-              </div>
-            ) : null}
             <button
               type="button"
               className="wingman-chat-bar__clear"
@@ -643,6 +673,68 @@ export function WingmanChatBar({
             >
               Clear chat
             </button>
+          </div>
+        ) : null}
+
+        {selectedProducts.length > 0 ? (
+          <div
+            className="wingman-chat-bar__pills"
+            role="list"
+            aria-label="Selected products"
+          >
+            {selectedProducts.map((product) => (
+              <span
+                key={product.slug}
+                className="wingman-chat-bar__pill"
+                role="listitem"
+              >
+                {product.imageUrl ? (
+                  <img
+                    className="wingman-chat-bar__pill-img"
+                    src={product.imageUrl}
+                    alt=""
+                    aria-hidden="true"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span
+                    className="wingman-chat-bar__pill-img wingman-chat-bar__pill-img--placeholder"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="wingman-chat-bar__pill-name">
+                  {product.title}
+                </span>
+                <button
+                  type="button"
+                  className="wingman-chat-bar__pill-remove"
+                  onClick={() => removeSelection(product.slug)}
+                  aria-label={`Remove ${product.title} from selection`}
+                  title={`Remove ${product.title}`}
+                >
+                  <X width={14} height={14} strokeWidth={2.5} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {nbas.length > 0 ? (
+          <div
+            className="wingman-chat-bar__nba"
+            role="group"
+            aria-label="Suggested next actions"
+          >
+            {nbas.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="wingman-chat-bar__nba-chip"
+                onClick={() => handleNbaClick(item)}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         ) : null}
 

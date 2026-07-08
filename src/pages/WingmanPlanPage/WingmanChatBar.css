@@ -41,6 +41,7 @@
   background: rgba(241, 241, 241, 0.5);
   border: 1px solid transparent;
   box-shadow: none;
+  backdrop-filter: blur(18.1px);
 
   transition:
     background-color 200ms ease,
@@ -59,6 +60,11 @@
 .wingman-chat-bar[data-state="thread"] {
   background: #ffffff;
   border-color: var(--agentic-card-border, #d1d5db);
+  box-shadow: 0px 4px 50px 0px rgba(0, 0, 0, 0.18);
+}
+
+.wingman-chat-bar[data-state="hover"] {
+  border-color: rgba(214, 214, 214, 1);
 }
 
 /* Thread state adds a soft drop shadow — matches Figma's
@@ -633,6 +639,175 @@ body:has(.wingman-plan-page__confirm-overlay)
  * impression that the upload has stalled.
  * ---------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------
+ * Selection pills — compact chips for products the shopper ticked via
+ * the tile checkboxes. Rendered above the input strip (the aside is a
+ * flex column, so the rail naturally stacks on top). Structure per
+ * pill: [product image] [truncated name] [x remove].
+ * ---------------------------------------------------------------- */
+
+.wingman-chat-bar__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+
+.wingman-chat-bar__pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 160px;
+  max-width: 100%;
+  height: 40px;
+  padding: 3px 12px 3px 3px;
+  background: var(--white, #ffffff);
+  border: 1px solid var(--agentic-card-border, #d1d5db);
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(24, 24, 24, 0.06);
+  animation: wingman-chat-bar__pill-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wingman-chat-bar__pill-img {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: contain;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.wingman-chat-bar__pill-img--placeholder {
+  display: inline-block;
+}
+
+.wingman-chat-bar__pill-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--agentic-foreground, #17171b);
+}
+
+.wingman-chat-bar__pill-remove {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: #818181;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.wingman-chat-bar__pill:hover .wingman-chat-bar__pill-remove,
+.wingman-chat-bar__pill:focus-within .wingman-chat-bar__pill-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.wingman-chat-bar__pill-remove:hover {
+  background: #ececec;
+  color: var(--agentic-foreground, #17171b);
+}
+
+.wingman-chat-bar__pill-remove:focus-visible {
+  outline: 2px solid #2f6bff;
+  outline-offset: 2px;
+}
+
+@keyframes wingman-chat-bar__pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ----------------------------------------------------------------
+ * Next Best Actions — context-aware suggestion chips rendered right
+ * below the selection pills. Single selection surfaces contextual
+ * FAQ chips; multi-selection surfaces a "Compare these" chip. Styled
+ * as soft ghost pills, keyed off the same tokens as the confirm
+ * buttons so the two contextual-action surfaces feel related.
+ * ---------------------------------------------------------------- */
+
+.wingman-chat-bar__nba {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 0 4px;
+  box-sizing: border-box;
+  animation: wingman-chat-bar__pill-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wingman-chat-bar__nba-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid var(--agentic-card-border, #d1d5db);
+  border-radius: 12px;
+  background: rgba(232, 232, 232, 1);
+  color: var(--agentic-foreground, #17171b);
+  font-family: var(--font-family-base, "Open Sans", sans-serif);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.wingman-chat-bar__nba-chip:hover {
+  background: #ffffff;
+  border-color: #b9bec6;
+  box-shadow: 0 1px 2px rgba(24, 24, 24, 0.08);
+}
+
+.wingman-chat-bar__nba-chip:focus-visible {
+  outline: 2px solid var(--agentic-focus, rgba(163, 163, 163, 0.5));
+  outline-offset: 2px;
+}
+
+.wingman-chat-bar__nba-chip:active {
+  transform: translateY(1px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wingman-chat-bar,
   .wingman-chat-bar__backdrop,
@@ -645,5 +820,21 @@ body:has(.wingman-plan-page__confirm-overlay)
   .wingman-chat-bar__bubble-dot {
     animation: none;
     opacity: 0.5;
+  }
+
+  .wingman-chat-bar__pill {
+    animation: none;
+  }
+
+  .wingman-chat-bar__pill-remove {
+    transition: none;
+  }
+
+  .wingman-chat-bar__nba {
+    animation: none;
+  }
+
+  .wingman-chat-bar__nba-chip {
+    transition: none;
   }
 }

@@ -48,6 +48,7 @@ import type { KitRationale } from "./kitRationale";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 import { WingmanChatBar } from "./WingmanChatBar";
 import { buildCustomCombo } from "./buildCustomCombo";
+import { resolveSelectionNbas } from "./wingmanNba";
 import type { KitAccessory } from "./parseKitCommands";
 import { buildAccessoryBundle } from "../../components/SidecarAssistant/conversation/flow";
 import {
@@ -59,6 +60,13 @@ import {
   setPendingBundleSuggestion,
   subscribe,
 } from "./wingmanChatStore";
+import {
+  getSnapshot as getSelectionSnapshot,
+  subscribe as subscribeSelection,
+  toggleSelection,
+  removeSelection,
+  MAX_SELECTION,
+} from "./wingmanSelectionStore";
 import "./WingmanPlanPage.css";
 
 /**
@@ -288,6 +296,13 @@ const REMOVE_CONFIRM_SKIP_KEY = "wingman-plan-skip-remove-confirm";
  * WingmanPlanPage.css. */
 const TILE_REMOVE_FADE_MS = 220;
 
+/* How long a tile shows its skeleton loader while a "Suggest a better
+ * version" swap is in flight, before the substituted product is
+ * committed inside a View Transition. Long enough to read as a genuine
+ * "fetching a better option" beat. Kept in sync with the
+ * `wingman-plan-page__tile--swapping` shimmer in WingmanPlanPage.css. */
+const TILE_SWAP_SKELETON_MS = 700;
+
 /* Reset-kit restore animation tuning. The "Reset kit" button restores
  * shopper-removed accessories one-by-one with a staggered cascade:
  *
@@ -303,6 +318,12 @@ const TILE_REMOVE_FADE_MS = 220;
  *     accidentally re-trigger the entrance keyframe. */
 const TILE_RESTORE_STAGGER_MS = 360;
 const TILE_RESTORE_FADE_MS = 720;
+
+/* Delay between appending the shopper's NBA question and the templated
+ * Wingman answer, so the exchange reads as a real back-and-forth rather
+ * than both bubbles popping in on the same frame. Mirrors the chat
+ * bar's own REPLY_DELAY_MS cadence. */
+const NBA_REPLY_DELAY_MS = 400;
 
 /* ============================================================
  * Hero
@@ -410,6 +431,10 @@ type WingmanPlanCombosProps = {
    * the `--restoring` modifier so CSS plays the in-place fade+scale
    * entrance, mirroring the remove animation. */
   restoringSlugs: Set<string>;
+  /* Slug of the tile currently mid-swap (phase 1 skeleton). The
+   * matching tile in the active mosaic picks up a `--swapping` class
+   * that paints a shimmer while the "better version" is fetched. */
+  swappingSlug: string | null;
   /* Map of shopper-removed slugs per tier. Threaded through so the
    * sidebar can decide whether to surface the "Reset kit" button on
    * the active combo (only shown when the active tier has at least
@@ -432,6 +457,7 @@ function WingmanPlanCombos({
   onRemoveAccessory,
   removingSlug,
   restoringSlugs,
+  swappingSlug,
   removedAccessories,
   onResetKit,
   onDeleteCustom,
@@ -538,6 +564,7 @@ function WingmanPlanCombos({
             }
             removingSlug={removingSlug}
             restoringSlugs={restoringSlugs}
+            swappingSlug={swappingSlug}
             hasRemovedAccessories={
               (removedAccessories[activeCombo.id]?.length ?? 0) > 0
             }
@@ -589,6 +616,11 @@ type ExpandedComboProps = {
    * get the `--restoring` modifier so CSS plays the fade+scale-in
    * entrance — mirror of the remove fade-out. */
   restoringSlugs: Set<string>;
+  /* Slug of the tile mid-swap (phase 1 skeleton of the "Suggest a
+   * better version" flow). The matching hero/accessory tile gets a
+   * `--swapping` modifier that paints a shimmer while the upgrade is
+   * fetched, before the substitution commits in a View Transition. */
+  swappingSlug: string | null;
   /* True when the shopper has removed at least one accessory from
    * this active combo. Drives the conditional "Reset kit" button in
    * the right-rail sidebar. */
@@ -608,6 +640,7 @@ function ExpandedCombo({
   onRemoveAccessory,
   removingSlug,
   restoringSlugs,
+  swappingSlug,
   hasRemovedAccessories,
   onResetKit,
   onDeleteCustom,
@@ -660,7 +693,12 @@ function ExpandedCombo({
         }
       >
         <div
-          className="wingman-plan-page__combo-tile wingman-plan-page__combo-tile--hero"
+          className={
+            "wingman-plan-page__combo-tile wingman-plan-page__combo-tile--hero" +
+            (swappingSlug === combo.core.slug
+              ? " wingman-plan-page__combo-tile--swapping"
+              : "")
+          }
           /* Opt the hero into the same View Transition flow the
            * accessory tiles use so when the last accessory is removed
            * (n=0 layout: hero spans the whole grid) — or the first
@@ -691,6 +729,7 @@ function ExpandedCombo({
         {accessories.map((acc, i) => {
           const isRemoving = removingSlug === acc.slug;
           const isRestoring = restoringSlugs.has(acc.slug);
+          const isSwapping = swappingSlug === acc.slug;
           return (
             <div
               key={acc.slug}
@@ -702,6 +741,9 @@ function ExpandedCombo({
                   : "") +
                 (isRestoring
                   ? " wingman-plan-page__combo-tile--restoring"
+                  : "") +
+                (isSwapping
+                  ? " wingman-plan-page__combo-tile--swapping"
                   : "")
               }
               /* `view-transition-name` opts each tile into the View
@@ -972,7 +1014,18 @@ function ProductTileImage({
    * the top of the component so the React hooks order stays stable
    * across re-renders even when the early return below fires. */
   const rationaleId = useId();
+  /* Subscribe to the shared selection store so the checkbox reflects
+   * (and drives) whether this product is currently held in the chat-bar
+   * pill rail. Reading the whole snapshot and deriving membership keeps
+   * the store API tiny — the list never exceeds MAX_SELECTION items. */
+  const selection = useSyncExternalStore(
+    subscribeSelection,
+    getSelectionSnapshot,
+    getSelectionSnapshot,
+  );
   if (!product) return null;
+  const isChecked = selection.some((p) => p.slug === product.slug);
+  const selectionFull = selection.length >= MAX_SELECTION;
   /* The marketing photos under `Product type/` are full-bleed lifestyle
    * shots — they should fill the tile (no inset frame, object-fit:
    * cover). The default PDP cut-outs are transparent thumbnails that
@@ -1085,9 +1138,42 @@ function ProductTileImage({
     </button>
   ) : null;
 
+  /* Selection checkbox pinned to the top-left of the card. Rendered as
+   * a sibling of the main tile <button> (not nested inside it) so we
+   * don't put interactive content inside a <button>, which is invalid
+   * HTML. The label stops click propagation so toggling the checkbox
+   * never triggers the tile's own onSelect. */
+  const selectCheckbox = (
+    <label
+      className="wingman-plan-page__card-checkbox"
+      onClick={(event) => event.stopPropagation()}
+      title={
+        !isChecked && selectionFull
+          ? `You can select up to ${MAX_SELECTION} products`
+          : undefined
+      }
+    >
+      <input
+        type="checkbox"
+        checked={isChecked}
+        disabled={!isChecked && selectionFull}
+        onClick={(event) => event.stopPropagation()}
+        onChange={() =>
+          toggleSelection({
+            slug: product.slug,
+            title: product.title,
+            imageUrl: product.imageUrl,
+          })
+        }
+        aria-label={`Select ${product.title}`}
+      />
+    </label>
+  );
+
   if (onSelect) {
     return (
       <div className="wingman-plan-page__tile-shell">
+        {selectCheckbox}
         <button
           type="button"
           className={`${tileClass} wingman-plan-page__tile--interactive`}
@@ -1203,6 +1289,15 @@ function CategoryRow({
   index,
   onSelectProduct,
 }: CategoryRowProps) {
+  /* Subscribe to the same shared selection store the combo tiles use so
+   * ticking a product card's checkbox drives the chat-bar pill rail (and
+   * reflects state set from anywhere else). */
+  const selection = useSyncExternalStore(
+    subscribeSelection,
+    getSelectionSnapshot,
+    getSelectionSnapshot,
+  );
+  const selectionFull = selection.length >= MAX_SELECTION;
   return (
     /* Native <details>/<summary> drives the expand/collapse so
      * keyboard + AT semantics come for free, but we control the
@@ -1252,8 +1347,39 @@ function CategoryRow({
       </summary>
       <div className="wingman-plan-page__accordion-panel">
         <ul className="wingman-plan-page__accordion-products">
-          {category.products.slice(0, 4).map((product) => (
-            <li key={product.slug}>
+          {category.products.slice(0, 4).map((product) => {
+            const isChecked = selection.some((p) => p.slug === product.slug);
+            return (
+            <li key={product.slug} className="wingman-plan-page__product-card-item">
+              {/* Selection checkbox pinned top-left. Sits as a sibling of
+               * the card <button> (nesting interactive content inside a
+               * <button> is invalid HTML); the <li> is the positioning
+               * context. Stops propagation so it never triggers the
+               * card's onSelectProduct. */}
+              <label
+                className="wingman-plan-page__card-checkbox"
+                onClick={(event) => event.stopPropagation()}
+                title={
+                  !isChecked && selectionFull
+                    ? `You can select up to ${MAX_SELECTION} products`
+                    : undefined
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  disabled={!isChecked && selectionFull}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={() =>
+                    toggleSelection({
+                      slug: product.slug,
+                      title: product.title,
+                      imageUrl: product.imageUrl,
+                    })
+                  }
+                  aria-label={`Select ${product.title}`}
+                />
+              </label>
               <button
                 type="button"
                 className="wingman-plan-page__product-card"
@@ -1278,7 +1404,8 @@ function CategoryRow({
                 </span>
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </div>
     </details>
@@ -1785,6 +1912,22 @@ export default function WingmanPlanPage() {
     Record<ComboTier, string[]>
   >({ budget: [], ideal: [], top: [], custom: [] });
 
+  /* Per-tier substitution map: originalSlug -> replacementSlug. Powers
+   * the "Suggest a better version" NBA, which swaps an in-kit product
+   * for a higher-tier alternative in place. Applied in the
+   * `displayCombos` projection alongside `removedAccessories` so the
+   * swap persists across tab switches and feeds the live sidebar
+   * price. Kept separate from removals so a swapped-then-reset kit can
+   * restore cleanly. */
+  const [swappedAccessories, setSwappedAccessories] = useState<
+    Record<ComboTier, Record<string, string>>
+  >({ budget: {}, ideal: {}, top: {}, custom: {} });
+
+  /* Slug of the tile currently showing its swap skeleton (phase 1 of
+   * the swap animation). Mirrors `removingSlug`; the active mosaic adds
+   * a `--swapping` modifier to the matching tile. */
+  const [swappingSlug, setSwappingSlug] = useState<string | null>(null);
+
   /* Pending confirmation prompt — null when no remove is in flight,
    * otherwise carries the tier+slug+title so the modal can render
    * descriptive copy and the page can complete the removal on
@@ -2005,34 +2148,51 @@ export default function WingmanPlanPage() {
    * `WingmanPlanCombos` can find it via `combos.find(c => c.id ===
    * "custom")` and render its tab beside the wingman-curated three. */
   const displayCombos = useMemo<Combo[]>(() => {
-    const projected = plan.combos.map((combo) => {
+    /* Project a combo through the shopper's live modifications: first
+     * apply per-tier swaps (originalSlug -> replacementSlug), then
+     * filter removed slugs, then recompute the headline price. Shared
+     * by the curated tiers and the custom combo so both react to the
+     * same NBA-driven edits. */
+    const projectCombo = (combo: Combo): Combo => {
+      const swaps = swappedAccessories[combo.id] ?? {};
       const removed = removedAccessories[combo.id] ?? [];
-      if (removed.length === 0) return combo;
-      const accessories = combo.accessories.filter(
-        (acc) => !removed.includes(acc.slug),
-      );
-      const corePrice = combo.core.price ?? 0;
+      const hasSwaps = Object.keys(swaps).length > 0;
+      if (!hasSwaps && removed.length === 0) return combo;
+
+      const substitute = (p: CatalogProduct): CatalogProduct => {
+        /* Follow swap chains (a tile swapped, then swapped again) until
+         * we reach the final replacement slug, guarding against cycles. */
+        let slug = p.slug;
+        const guard = new Set<string>();
+        while (swaps[slug] && !guard.has(slug)) {
+          guard.add(slug);
+          slug = swaps[slug];
+        }
+        if (slug === p.slug) return p;
+        return products.find((cp) => cp.slug === slug) ?? p;
+      };
+
+      const core = substitute(combo.core);
+      const seen = new Set<string>([core.slug]);
+      const accessories = combo.accessories
+        .map(substitute)
+        .filter((acc) => {
+          if (removed.includes(acc.slug)) return false;
+          if (seen.has(acc.slug)) return false;
+          seen.add(acc.slug);
+          return true;
+        });
       const totalPrice = accessories.reduce(
         (sum, acc) => sum + (acc.price ?? 0),
-        corePrice,
+        core.price ?? 0,
       );
-      return { ...combo, accessories, totalPrice };
-    });
+      return { ...combo, core, accessories, totalPrice };
+    };
+
+    const projected = plan.combos.map(projectCombo);
     if (!customCombo) return projected;
-    /* Apply the same removed-accessory filtering to the custom combo
-     * so removing a tile from the Custom tab persists the same way it
-     * does on the curated tiers. */
-    const removed = removedAccessories.custom ?? [];
-    if (removed.length === 0) return [...projected, customCombo];
-    const accessories = customCombo.accessories.filter(
-      (acc) => !removed.includes(acc.slug),
-    );
-    const totalPrice = accessories.reduce(
-      (sum, acc) => sum + (acc.price ?? 0),
-      customCombo.core.price ?? 0,
-    );
-    return [...projected, { ...customCombo, accessories, totalPrice }];
-  }, [plan.combos, removedAccessories, customCombo]);
+    return [...projected, projectCombo(customCombo)];
+  }, [plan.combos, removedAccessories, swappedAccessories, customCombo, products]);
 
   const activeDisplayCombo = useMemo(
     () => displayCombos.find((combo) => combo.id === activeCombo) ?? null,
@@ -2047,6 +2207,134 @@ export default function WingmanPlanPage() {
       })),
     [activeDisplayCombo],
   );
+
+  /* Products the shopper has ticked via the tile / category-card
+   * checkboxes. Subscribing here (the same store the chat-bar pill rail
+   * reads) lets the page resolve full catalog entries for the selection
+   * and derive context-aware Next Best Actions. */
+  const selectedProducts = useSyncExternalStore(
+    subscribeSelection,
+    getSelectionSnapshot,
+    getSelectionSnapshot,
+  );
+
+  /* Append the shopper's NBA question immediately, then the templated
+   * Wingman answer on a short delay so the exchange reads as a genuine
+   * back-and-forth. The chat bar reopens its thread on the same click,
+   * so both bubbles surface without extra plumbing. */
+  const askInChat = useCallback((question: string, answer: string) => {
+    appendMessage("user", question);
+    window.setTimeout(() => {
+      appendMessage("assistant", answer);
+    }, NBA_REPLY_DELAY_MS);
+  }, []);
+
+  /* NBA "Remove this/these": drop the slug(s) from the active kit (via
+   * the shared remove animation) AND untick them from the selection so
+   * the chat-bar pill + NBA row clear in one gesture. */
+  const handleRemoveFromKitAndUntick = useCallback(
+    (slugs: string[]) => {
+      if (slugs.length === 0) return;
+      for (const slug of slugs) {
+        commitRemoveAccessory(activeCombo, slug);
+        removeSelection(slug);
+      }
+    },
+    [activeCombo, commitRemoveAccessory],
+  );
+
+  /* NBA "Add to kit": route a browsed product into the custom kit,
+   * reusing the existing custom-bundle path (which switches to the
+   * Custom tab). Untick it afterward so the pill/NBA row resets. */
+  const handleAddToKit = useCallback(
+    (slug: string) => {
+      const product = products.find((p) => p.slug === slug);
+      if (!product) return;
+      handleAddToCustomBundle(product);
+      removeSelection(slug);
+    },
+    [products, handleAddToCustomBundle],
+  );
+
+  /* NBA "Suggest a better version": swap an in-kit product for a
+   * higher-tier alternative in place. Phase 1 paints the tile with a
+   * skeleton (`swappingSlug`); phase 2 commits the substitution inside
+   * a View Transition so the tile morphs into the upgrade, then unticks
+   * the original and drops a chat notice describing the swap. */
+  const handleSwapForBetter = useCallback(
+    (oldSlug: string, newSlug: string) => {
+      const oldProduct = products.find((p) => p.slug === oldSlug);
+      const newProduct = products.find((p) => p.slug === newSlug);
+      if (!newProduct) return;
+      const tier = activeCombo;
+      setSwappingSlug((current) => current ?? oldSlug);
+
+      window.setTimeout(() => {
+        const update = () => {
+          setSwappedAccessories((prev) => {
+            const current = prev[tier] ?? {};
+            return { ...prev, [tier]: { ...current, [oldSlug]: newSlug } };
+          });
+          setSwappingSlug((current) => (current === oldSlug ? null : current));
+        };
+        const doc = document as Document & {
+          startViewTransition?: (cb: () => void) => unknown;
+        };
+        if (typeof doc.startViewTransition === "function") {
+          doc.startViewTransition(() => {
+            flushSync(update);
+          });
+        } else {
+          update();
+        }
+        removeSelection(oldSlug);
+        const fromLabel = oldProduct ? oldProduct.title : "that pick";
+        const priceNote = newProduct.priceFormatted
+          ? ` at ${newProduct.priceFormatted}`
+          : "";
+        appendMessage(
+          "assistant",
+          `I swapped your ${fromLabel} for the ${newProduct.title} — a step up to the ${newProduct.tier} tier${priceNote}.`,
+        );
+      }, TILE_SWAP_SKELETON_MS);
+    },
+    [activeCombo, products],
+  );
+
+  const selectionNbas = useMemo(() => {
+    const resolved = selectedProducts
+      .map((p) => products.find((cp) => cp.slug === p.slug))
+      .filter((p): p is CatalogProduct => Boolean(p));
+    const activeKitSlugs = new Set<string>();
+    if (activeDisplayCombo) {
+      activeKitSlugs.add(activeDisplayCombo.core.slug);
+      for (const acc of activeDisplayCombo.accessories) {
+        activeKitSlugs.add(acc.slug);
+      }
+    }
+    return resolveSelectionNbas(
+      resolved,
+      {
+        activeKitSlugs,
+        coreSlug: activeDisplayCombo?.core.slug ?? null,
+        catalog: products,
+      },
+      {
+        askInChat,
+        removeFromKit: handleRemoveFromKitAndUntick,
+        addToKit: handleAddToKit,
+        swapForBetter: handleSwapForBetter,
+      },
+    );
+  }, [
+    selectedProducts,
+    products,
+    activeDisplayCombo,
+    askInChat,
+    handleRemoveFromKitAndUntick,
+    handleAddToKit,
+    handleSwapForBetter,
+  ]);
 
   const handleImmediateChatRemove = useCallback(
     (slugs: string[]) => {
@@ -2148,6 +2436,7 @@ export default function WingmanPlanPage() {
                   onRemoveAccessory={handleRemoveRequest}
                   removingSlug={removingSlug}
                   restoringSlugs={restoringSlugs}
+                  swappingSlug={swappingSlug}
                   removedAccessories={removedAccessories}
                   onResetKit={handleResetKit}
                   onDeleteCustom={handleDeleteCustomBundle}
@@ -2185,6 +2474,7 @@ export default function WingmanPlanPage() {
         onRestoreInActiveKit={handleImmediateChatRestore}
         onAcceptBundleSuggestions={handleAcceptProactiveSuggestions}
         onDeclineBundleSuggestions={handleDeclineProactiveSuggestions}
+        nbas={selectionNbas}
       />
     </div>
   );
