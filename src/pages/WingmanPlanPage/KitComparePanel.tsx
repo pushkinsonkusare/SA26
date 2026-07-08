@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Plus, Star, X } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
-import { usePrototypeNavigation } from "../../prototypeRoutes";
 import { formatPriceUsd } from "./buildPlan";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 
@@ -158,8 +157,6 @@ export function KitComparePanel({
   onClose,
   onAddToBundle,
 }: KitComparePanelProps) {
-  const { navigateToProduct } = usePrototypeNavigation();
-
   /* Slugs the shopper has added to their bundle from within the compare
    * table this session — flips the "+" affordance to a "added" check so
    * they can gather several picks without the panel closing on them. */
@@ -283,10 +280,7 @@ export function KitComparePanel({
                       <button
                         type="button"
                         className="wingman-kit-compare__head-title"
-                        onClick={() => {
-                          navigateToProduct(product.slug);
-                          onClose();
-                        }}
+                        onClick={() => setViewProduct(product)}
                         title={product.title}
                       >
                         {product.title}

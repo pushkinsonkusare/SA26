@@ -54,6 +54,31 @@ type YouTubeSearchItem = {
   };
 };
 
+/* Title-based negativity heuristic. The Search API exposes no
+ * sentiment, so we scan the title for phrases that signal a critical /
+ * "don't buy" review. Used only to DEMOTE such videos to the bottom of
+ * the list (never to hide them) — this is a storefront surface, so we
+ * don't want a "DON'T BUY THIS" clip auto-playing on a product we're
+ * trying to sell, but we also don't hide dissenting opinions. */
+const NEGATIVE_TITLE_PATTERNS: RegExp[] = [
+  /\bdon'?t\s+buy\b/i,
+  /\bdo\s+not\s+buy\b/i,
+  /\bnot\s+(for\s+you|worth|buying)\b/i,
+  /\bavoid\b/i,
+  /\b(worst|terrible|awful|garbage|trash)\b/i,
+  /\b(scam|ripoff|rip-?off|waste)\b/i,
+  /\b(problem|problems|issue|issues|flaw|flaws|fail|failure)\b/i,
+  /\b(disappoint|disappointing|disappointed)\b/i,
+  /\b(regret|returned|refund)\b/i,
+  /\b(overrated|overpriced|stop)\b/i,
+  /\b(before\s+you\s+buy)\b/i,
+  /\bwhy\s+(i|you).*(not|shouldn'?t|won'?t)\b/i,
+];
+
+function isNegativeTitle(title: string): boolean {
+  return NEGATIVE_TITLE_PATTERNS.some((re) => re.test(title));
+}
+
 function mapItem(item: YouTubeSearchItem): YouTubeReview | null {
   const videoId = item.id?.videoId;
   if (!videoId) return null;
@@ -105,8 +130,19 @@ export async function fetchYouTubeReviews(
     .map(mapItem)
     .filter((r): r is YouTubeReview => r !== null);
 
-  cache.set(query, reviews);
-  return reviews;
+  /* Demote negative-titled reviews to the bottom while preserving
+   * YouTube's relevance order within each group (Array.prototype.sort
+   * is stable). This keeps a positive/neutral video as the first item,
+   * so the auto-played clip never leads with a "don't buy" message. */
+  const ranked = reviews
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(isNegativeTitle(a.title)) - Number(isNegativeTitle(b.title)),
+    );
+
+  cache.set(query, ranked);
+  return ranked;
 }
 
 /** Build a plain YouTube search URL — the fallback when the API key is

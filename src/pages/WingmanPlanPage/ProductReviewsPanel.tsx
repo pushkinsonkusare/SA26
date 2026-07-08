@@ -348,7 +348,7 @@ export function ProductReviewsPanel({
             }
             onClick={() => setActiveTab("videos")}
           >
-            Videos
+            Video reviews
           </button>
           <button
             type="button"
