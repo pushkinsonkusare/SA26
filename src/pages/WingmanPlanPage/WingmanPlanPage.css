@@ -3018,30 +3018,37 @@
  * ============================================================ */
 
 .wingman-kit-details__backdrop {
-  /* Start below the full sticky header stack: AgentModeBar
-   * (`--sxs-mode-bar-height`) + ImmersiveHeader (84px). */
-  --wingman-kit-details-top-offset: calc(var(--sxs-mode-bar-height, 64px) + 84px);
+  /* Full-viewport dim — the modal takes over the WHOLE page,
+   * including the AgentModeBar + ImmersiveHeader. The offset var is
+   * kept (defaulting to 0) so the mobile bottom-sheet overrides can
+   * still re-anchor the dim layer to the simulated phone frame. */
+  --wingman-kit-details-top-offset: 0px;
   position: fixed;
-  /* Keep both the mode bar and immersive nav fully interactive/visible
-   * while the panel is open; the dim layer begins below them. */
   inset: var(--wingman-kit-details-top-offset) 0 0 0;
   background: rgba(15, 15, 17, 0.4);
-  /* Above the ImmersiveHeader (z-index 50) so the modal still takes
-   * over the page chrome. The panel is portal-rendered so this
-   * z-index isn't trapped in any page stacking context. */
+  /* Above the ImmersiveHeader (z-index 50) so the dim covers the
+   * page chrome too. The panel is portal-rendered so this z-index
+   * isn't trapped in any page stacking context. */
   z-index: 1100;
   animation: wingman-kit-details-fade 180ms ease-out;
 }
 
 .wingman-kit-details {
   position: fixed;
-  /* Match backdrop offset so the panel aligns to the same start line. */
-  top: calc(var(--sxs-mode-bar-height, 64px) + 84px);
-  right: 0;
-  bottom: 0;
-  width: min(560px, 100vw);
+  /* Floating card — inset 24px from the top, right and bottom edges so
+   * it reads as a panel over the dimmed page rather than a flush
+   * drawer. Sits ABOVE the header so the overlay is on top of
+   * everything. */
+  top: 24px;
+  right: 24px;
+  bottom: 24px;
+  width: min(560px, calc(100vw - 48px));
   background: #ffffff;
   z-index: 1101;
+  /* Round all four corners; clip children (header bg, actions bar) to
+   * the radius. */
+  border-radius: 24px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: -16px 0 48px rgba(15, 15, 17, 0.16);
@@ -3706,7 +3713,7 @@
  * the bar from collapsing on tall content. */
 .wingman-kit-details__actions-bar {
   flex-shrink: 0;
-  padding: 16px 24px;
+  padding: 16px 24px 24px;
   background: #ffffff;
   border-top: 1px solid #ececec;
 }
