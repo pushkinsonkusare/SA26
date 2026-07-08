@@ -46,6 +46,7 @@ import { useHeadline } from "./useHeadline";
 import { useKitRationales } from "./useKitRationales";
 import type { KitRationale } from "./kitRationale";
 import { KitDetailsPanel } from "./KitDetailsPanel";
+import { KitComparePanel } from "./KitComparePanel";
 import { WingmanChatBar } from "./WingmanChatBar";
 import { buildCustomCombo } from "./buildCustomCombo";
 import { resolveSelectionNbas } from "./wingmanNba";
@@ -2218,6 +2219,14 @@ export default function WingmanPlanPage() {
     getSelectionSnapshot,
   );
 
+  /* Products currently shown in the side-by-side comparison panel.
+   * Null when the panel is closed. Opened by the "Compare these"
+   * selection NBA — comparison is a routine feature, so it surfaces in
+   * a dedicated tabular panel (KitComparePanel) rather than the chat. */
+  const [compareProducts, setCompareProducts] = useState<
+    CatalogProduct[] | null
+  >(null);
+
   /* Append the shopper's NBA question immediately, then the templated
    * Wingman answer on a short delay so the exchange reads as a genuine
    * back-and-forth. The chat bar reopens its thread on the same click,
@@ -2324,6 +2333,7 @@ export default function WingmanPlanPage() {
         removeFromKit: handleRemoveFromKitAndUntick,
         addToKit: handleAddToKit,
         swapForBetter: handleSwapForBetter,
+        compareProducts: setCompareProducts,
       },
     );
   }, [
@@ -2475,6 +2485,16 @@ export default function WingmanPlanPage() {
         onAcceptBundleSuggestions={handleAcceptProactiveSuggestions}
         onDeclineBundleSuggestions={handleDeclineProactiveSuggestions}
         nbas={selectionNbas}
+      />
+      {/* Side-by-side comparison — a routine, non-chat surface opened by
+       * the "Compare these" selection NBA. Reuses the KitDetailsPanel
+       * slide-in chrome (and its backdrop class, so the chat bar dims
+       * via the shared `body:has(.wingman-kit-details__backdrop)` rule).
+       * "+" routes the product into the custom bundle. */}
+      <KitComparePanel
+        products={compareProducts}
+        onClose={() => setCompareProducts(null)}
+        onAddToBundle={handleAddToCustomBundle}
       />
     </div>
   );

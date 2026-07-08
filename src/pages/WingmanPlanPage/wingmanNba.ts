@@ -49,6 +49,10 @@ export type WingmanNbaDeps = {
   addToKit: (slug: string) => void;
   /** Swap an in-kit product for a higher-tier alternative in place. */
   swapForBetter: (oldSlug: string, newSlug: string) => void;
+  /** Open the side-by-side comparison panel for the given products.
+   * Comparison is a routine feature, so it opens a dedicated tabular
+   * surface rather than dropping a text summary into the chat. */
+  compareProducts: (products: CatalogProduct[]) => void;
 };
 
 /**
@@ -246,39 +250,97 @@ export function buildProductFaqs(
 }
 
 /* ============================================================
- * Comparison composer
- * ============================================================ */
+ * Free-text product Q&A
+ * ============================================================
+ *
+ * Powers the chat bar's natural-language questions ("is this
+ * waterproof?"). Deterministic and instant — routes the shopper's
+ * question to the same FAQ_RULES answer wording used by the preset
+ * chips, so a typed question and a tapped chip read identically.
+ */
+
+/* Fast lookup from FAQ rule id to its definition so the free-text
+ * router can reuse a rule's `answer()` without re-declaring copy. */
+const FAQ_RULES_BY_ID: Record<string, FaqRule> = Object.fromEntries(
+  FAQ_RULES.map((rule) => [rule.id, rule]),
+);
+
+/* Leading imperative verbs that mark a plan-steering command rather
+ * than a question — kept out of the "is this a question?" heuristic so
+ * "make it cheaper" / "remove this" still flow to the steering path. */
+const IMPERATIVE_LEAD =
+  /^\s*(make|suggest|show|find|update|swap|replace|add|remove|change|give)\b/i;
+
+/* Interrogative openers that mark a question even without a "?". */
+const QUESTION_LEAD =
+  /^\s*(is|are|does|do|can|could|will|would|what|what's|whats|how|which|why|should|has|have)\b/i;
 
 /**
- * Compose a plain-text side-by-side comparison of the selected
- * products for an assistant bubble. One line per product covering
- * price, rating, tier, and the most differentiating spec available.
+ * Heuristic for whether a typed message is a question about the
+ * selected product (vs. a plan-steering command). True when the text
+ * ends/contains a "?", opens with an interrogative, or references
+ * "this"/"it" without leading with an imperative verb.
  */
-export function buildComparisonReply(products: CatalogProduct[]): string {
-  const lines = products.map((p) => {
-    const bits: string[] = [p.priceFormatted];
-    if (p.rating != null) bits.push(`${p.rating.toFixed(1)}★`);
-    bits.push(`${p.tier} tier`);
-    const highlight =
-      findSpec(p, ["range", "resolution", "flight time", "battery", "sensor"]) ??
-      p.specs[0] ??
-      null;
-    if (highlight) bits.push(`${highlight.label}: ${highlight.value}`);
-    return `• ${p.title} — ${bits.join(" · ")}`;
-  });
-  return `Here's how they stack up:\n${lines.join("\n")}`;
+export function isProductQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (IMPERATIVE_LEAD.test(trimmed)) return false;
+  if (trimmed.includes("?")) return true;
+  if (QUESTION_LEAD.test(trimmed)) return true;
+  return /\b(this|it)\b/i.test(trimmed);
+}
+
+/* Ordered keyword → FAQ rule id map. First hit wins, so more specific
+ * patterns sit above generic ones. */
+const QUESTION_INTENTS: Array<{ match: RegExp; ruleId: string }> = [
+  { match: /waterproof|underwater|submerge|\bwet\b|\bwater\b|\brain/i, ruleId: "waterproof" },
+  { match: /beginner|\beasy\b|new to|starter|first[- ]?time|hard to use/i, ruleId: "beginner" },
+  { match: /flight time|\brange\b|distance|how far|\breach\b/i, ruleId: "range" },
+  { match: /battery|how long.*(last|go)|runtime|\bcharge\b/i, ruleId: "battery" },
+  { match: /video|resolution|\b4k\b|\bfps\b|record|footage|photo|image quality/i, ruleId: "video" },
+  { match: /work with|compatible|hold my phone|\bfit\b|\bmount\b|\battach\b/i, ruleId: "compatibility" },
+  { match: /\bbox\b|included|come(s)? with|what do i get/i, ruleId: "in-the-box" },
+  { match: /worth|\bprice\b|\bcost\b|expensive|\bvalue\b|\bcheap\b|budget/i, ruleId: "value" },
+];
+
+/**
+ * Answer a free-text question about a single product, built entirely
+ * from its catalog data. Routes the question to an existing FAQ rule
+ * where possible, then falls back to a direct spec search, then to a
+ * generic capability summary.
+ */
+export function answerProductQuestion(
+  product: CatalogProduct,
+  question: string,
+): string {
+  for (const { match, ruleId } of QUESTION_INTENTS) {
+    if (!match.test(question)) continue;
+    /* "In the box" only reads well when we actually have contents;
+     * otherwise let it fall through to the spec/generic fallbacks. */
+    if (ruleId === "in-the-box" && product.inTheBox.length === 0) continue;
+    const rule = FAQ_RULES_BY_ID[ruleId];
+    if (rule) return rule.answer(product);
+  }
+
+  /* Spec-search fallback: pull meaningful words from the question and
+   * look for a spec whose label/value mentions any of them. */
+  const words = question
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4);
+  if (words.length > 0) {
+    const spec = findSpec(product, words);
+    if (spec) return `For the ${product.title} — ${spec.label}: ${spec.value}.`;
+  }
+
+  /* Generic capability summary. */
+  return `The ${product.title} is a ${product.tier}-tier ${product.category} at ${product.priceFormatted}. Ask about specs like battery, video, range, or what's in the box.`;
 }
 
 /* ============================================================
  * Resolver
  * ============================================================ */
-
-function sameCategory(products: CatalogProduct[]): boolean {
-  if (products.length < 2) return false;
-  const first = products[0].productTypeGroup;
-  if (!first) return false;
-  return products.every((p) => p.productTypeGroup === first);
-}
 
 /* Ordinal ladder for the "better version" upgrade path. */
 const TIER_ORDER: Record<ProductTier, number> = {
@@ -468,12 +530,6 @@ export function resolveSelectionNbas(
   }
 
   /* 2-3 products. */
-  const titles = products.map((p) => p.title);
-  const listForPrompt =
-    titles.length === 2
-      ? `${titles[0]} and ${titles[1]}`
-      : `${titles.slice(0, -1).join(", ")}, and ${titles[titles.length - 1]}`;
-
   if (products.every(inKit)) {
     const items: WingmanNbaItem[] = [
       {
@@ -510,30 +566,16 @@ export function resolveSelectionNbas(
     return items;
   }
 
-  /* Browsing selection — compare only makes sense within one category. */
-  if (sameCategory(products)) {
-    return [
-      {
-        id: "compare",
-        label: "Compare these",
-        run: () =>
-          deps.askInChat(
-            `Compare ${listForPrompt}`,
-            buildComparisonReply(products),
-          ),
-      },
-    ];
-  }
-
+  /* Browsing selection — comparison is a routine feature, so it opens
+   * the dedicated tabular compare panel rather than the chat thread.
+   * Same-category picks compare cleanly on shared specs; mixed-category
+   * picks still compare on universal attributes (price, rating, tier,
+   * category), so we offer "Compare these" in both cases. */
   return [
     {
-      id: "ask-about-these",
-      label: "Ask Wingman about these",
-      run: () =>
-        deps.askInChat(
-          `Tell me about ${listForPrompt}`,
-          buildComparisonReply(products),
-        ),
+      id: "compare",
+      label: "Compare these",
+      run: () => deps.compareProducts(products),
     },
   ];
 }

@@ -14,6 +14,7 @@ import {
   Plus,
   Sparkle,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import { useSpeechRecognition } from "../WingmanPage/useSpeechRecognition";
@@ -40,6 +41,7 @@ import {
   subscribe,
 } from "./wingmanChatStore";
 import {
+  clearSelection,
   getSnapshot as getSelectionSnapshot,
   removeSelection,
   subscribe as subscribeSelection,
@@ -515,11 +517,17 @@ export function WingmanChatBar({
 
   /* Drive the outer chrome's appearance. `thread` wins over `active`
    * wins over `hover` wins over `rest`. Using a single `data-state`
-   * attribute keeps the CSS rule list flat. */
+   * attribute keeps the CSS rule list flat.
+   *
+   * Ticking a product checkbox surfaces selection pills above the
+   * input; treat that as an implicit engagement so the bar lifts into
+   * the solid-white `hover` chrome (matching the focus look) instead
+   * of staying in the translucent resting state while pills sit on it. */
+  const hasSelection = selectedProducts.length > 0;
   let visualState: "rest" | "hover" | "active" | "thread";
   if (hasThread) visualState = "thread";
   else if (isFocused) visualState = "active";
-  else if (isHovered) visualState = "hover";
+  else if (isHovered || hasSelection) visualState = "hover";
   else visualState = "rest";
 
   let micIcon: ReactNode;
@@ -716,6 +724,15 @@ export function WingmanChatBar({
                 </button>
               </span>
             ))}
+            <button
+              type="button"
+              className="wingman-chat-bar__pill wingman-chat-bar__pill-clear"
+              onClick={() => clearSelection()}
+              aria-label="Clear all selected products"
+              title="Clear all selections"
+            >
+              <Trash2 width={16} height={16} strokeWidth={2} aria-hidden="true" />
+            </button>
           </div>
         ) : null}
 

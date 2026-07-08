@@ -59,6 +59,11 @@ type KitDetailsPanelProps = {
   initialSelectedSlug?: string | null;
   /** Optional hook for product mode's "Add to custom bundle" button. */
   onAddToCustomBundle?: (product: CatalogProduct) => void;
+  /** When provided, the header shows a back button (◀) instead of just
+   * the title. Used when the panel is opened on top of another surface
+   * (e.g. the compare panel's "View" action) so the shopper can return
+   * to where they came from rather than closing outright. */
+  onBack?: () => void;
   onClose: () => void;
 };
 
@@ -69,6 +74,7 @@ export function KitDetailsPanel({
   kitDescription,
   initialSelectedSlug,
   onAddToCustomBundle,
+  onBack,
   onClose,
 }: KitDetailsPanelProps) {
   const { navigate, navigateToProduct } = usePrototypeNavigation();
@@ -236,6 +242,16 @@ export function KitDetailsPanel({
         aria-label={dialogLabel}
       >
         <header className="wingman-kit-details__header">
+          {onBack ? (
+            <button
+              type="button"
+              className="wingman-kit-details__back"
+              onClick={onBack}
+              aria-label="Back to comparison"
+            >
+              <ChevronLeft width={16} height={16} aria-hidden="true" />
+            </button>
+          ) : null}
           <h2 className="wingman-kit-details__header-title">{headerTitle}</h2>
           <div className="wingman-kit-details__header-actions">
             <button
