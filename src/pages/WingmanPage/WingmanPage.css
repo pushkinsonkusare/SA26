@@ -56,7 +56,7 @@
 }
 
 /* `--header-h` matches the immersive header's resolved height
- * (24 padding + 36 content row + 24 padding = 84). The main column
+ * (18 padding + 36 content row + 18 padding = 72). The main column
  * is pulled up by this amount so the hero lifestyle banner extends
  * *behind* the (now-transparent) header, mirroring the Wingman Plan
  * page. The header itself stays sticky with `z-index: 50`, so it
@@ -67,7 +67,7 @@
  * never shifts the left edge of the headline. */
 .wingman-page__main {
   --main-pad-x: 120px;
-  --header-h: 84px;
+  --header-h: 72px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -214,11 +214,11 @@
  * over it via `main { margin-top: -header-h }`).
  *
  * Math:
- *   hero padding-top = var(--header-h) + 59px = 84 + 59 = 143px
+ *   hero padding-top = var(--header-h) + 59px = 72 + 59 = 131px
  *   intro is the first flex child of hero-content with no prior
- *     siblings, so it sits at viewport y = 143 + margin-top
+ *     siblings, so it sits at viewport y = 131 + margin-top
  *   target viewport y = 250
- *   ⇒ margin-top = 250 − 143 = 107px
+ *   ⇒ margin-top = 250 − 131 = 119px
  *
  * Encoded as `calc(250px - var(--header-h) - 59px)` so the anchor
  * tracks any future change to the hero's top padding. `margin-top`
@@ -269,11 +269,11 @@
  * hero starts at viewport y=0 on both surfaces.
  *
  * Math for the wingman page:
- *   hero padding-top = var(--header-h) + 59px = 84 + 59 = 143px
+ *   hero padding-top = var(--header-h) + 59px = 72 + 59 = 131px
  *   prompt is absolute inside hero-content, whose padding-edge sits
- *     at viewport y = 143
+ *     at viewport y = 131
  *   target viewport y = 453
- *   ⇒ CSS top = 453 − 143 = 310px
+ *   ⇒ CSS top = 453 − 131 = 322px
  *
  * `top: calc(453px - var(--header-h) - 59px)` keeps the relationship
  * explicit: if hero padding-top is ever retuned, the prompt's anchor

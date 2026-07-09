@@ -1747,7 +1747,7 @@
   font-weight: 400;
   font-size: 14px;
   line-height: 1.4;
-  color: #4f4f4f;
+  color: #757575;
 }
 
 .wingman-plan-page__accordion[open] .wingman-plan-page__accordion-subtitle {
@@ -3702,8 +3702,8 @@
 
 .wingman-kit-details__product-head {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 16px;
 }
 
@@ -3750,9 +3750,27 @@
 }
 
 .wingman-kit-details__product-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  align-self: stretch;
+  width: 100%;
+}
+
+/* Pin the "Create custom bundle" CTA to the extreme left; the auto
+ * right-margin absorbs the remaining space so the other actions
+ * ("Add to cart" / "Buy now") stay grouped on the right. */
+.wingman-kit-details__bundle-cta {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Soften the sparkle so it reads as a subtle accent, not a loud
+ * glyph competing with the label. */
+.wingman-kit-details__bundle-cta svg {
+  opacity: 0.6;
 }
 
 .wingman-kit-details__product-description {
@@ -3899,6 +3917,14 @@
   white-space: nowrap;
 }
 
+/* Actions now stack below the headline, so the secondary button should
+ * align flush with the headline's left edge (the row owns its own 8px
+ * gap for spacing between buttons). */
+.wingman-kit-details__product-actions
+  .wingman-plan-page__sidebar-button--secondary {
+  margin-left: 0;
+}
+
 /* Mobile bottom-sheet rendering.
  *
  * Desktop renders the panel as a right-anchored slide-in (553px-ish
@@ -4035,9 +4061,199 @@ html[data-demo-viewport="mobile"] .wingman-kit-details__actions {
 
 .wingman-kit-compare__table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   font-family: "Open Sans", var(--font-family-base);
+  border: 1px solid var(--agentic-card-border, #d1d5db);
+  border-radius: 20px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+
+/* ============================================================
+ * Build-up skeleton
+ * ------------------------------------------------------------
+ * Shown for a beat while Wingman "assembles" the comparison
+ * (see `isBuilding` in KitComparePanel). Grid columns mirror the
+ * real table exactly — a 116px label column + `--sk-cols` equal
+ * product columns — so when the skeleton dissolves into the
+ * populated table there's zero layout shift. Every grey token
+ * carries the same diagonal-sheen sweep used by
+ * `.wingman-plan-page__loading-pill`, staggered per column via
+ * `animation-delay` so the row reads as content streaming in.
+ * ============================================================ */
+.wingman-kit-compare__skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.wingman-kit-compare__sk-head,
+.wingman-kit-compare__sk-row,
+.wingman-kit-compare__sk-foot {
+  display: grid;
+  grid-template-columns: 116px repeat(var(--sk-cols, 2), 1fr);
+  align-items: center;
+}
+
+.wingman-kit-compare__sk-head {
+  padding: 16px 0;
+  border-bottom: 1px solid #ececec;
+  align-items: start;
+}
+
+.wingman-kit-compare__sk-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.wingman-kit-compare__sk-row {
+  min-height: 44px;
+  border-bottom: 1px solid #f4f4f4;
+}
+
+.wingman-kit-compare__sk-foot {
+  padding: 16px 0;
+}
+
+.wingman-kit-compare__sk-foot-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.wingman-kit-compare__sk-corner {
+  /* Spacer occupying the label column in the header + footer rows. */
+  display: block;
+}
+
+/* Shimmer token. Base grey + a clipped white sheen pseudo that sweeps
+ * across on the shared loading-pill keyframes. */
+.wingman-kit-compare__sk {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  background: #ececec;
+  border-radius: 6px;
+}
+
+.wingman-kit-compare__sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0) 28%,
+    rgba(255, 255, 255, 0.62) 50%,
+    rgba(255, 255, 255, 0) 72%
+  );
+  transform: translateX(-130%);
+  animation: wingman-plan-page__loading-pill-sheen 1.6s
+    cubic-bezier(0.42, 0.08, 0.3, 0.98) infinite;
+}
+
+/* Stagger the sweep across the product columns so the comparison
+ * reads as filling in left-to-right rather than blinking as one block. */
+.wingman-kit-compare__sk-row .wingman-kit-compare__sk--cell:nth-child(2)::after,
+.wingman-kit-compare__sk-col:nth-child(2) .wingman-kit-compare__sk::after {
+  animation-delay: 0ms;
+}
+.wingman-kit-compare__sk-row .wingman-kit-compare__sk--cell:nth-child(3)::after,
+.wingman-kit-compare__sk-col:nth-child(3) .wingman-kit-compare__sk::after {
+  animation-delay: 120ms;
+}
+.wingman-kit-compare__sk-row .wingman-kit-compare__sk--cell:nth-child(4)::after,
+.wingman-kit-compare__sk-col:nth-child(4) .wingman-kit-compare__sk::after {
+  animation-delay: 240ms;
+}
+
+/* Header column tokens. */
+.wingman-kit-compare__sk--img {
+  width: 100%;
+  height: 108px;
+  border-radius: 12px;
+}
+.wingman-kit-compare__sk--title {
+  width: 80%;
+  height: 14px;
+}
+.wingman-kit-compare__sk--price {
+  width: 46%;
+  height: 12px;
+}
+.wingman-kit-compare__sk--rating {
+  width: 60%;
+  height: 12px;
+}
+
+/* Attribute-row tokens. Label sits left-aligned in the 116px column;
+ * cell tokens center under each product column. */
+.wingman-kit-compare__sk--label {
+  width: 70px;
+  height: 12px;
+  margin-left: 0;
+  justify-self: start;
+}
+.wingman-kit-compare__sk--cell {
+  width: 64%;
+  height: 12px;
+  justify-self: center;
+}
+
+/* Footer action tokens — the pill "View" button + round "+" icon. */
+.wingman-kit-compare__sk--btn {
+  width: 64px;
+  height: 32px;
+  border-radius: 24px;
+}
+.wingman-kit-compare__sk--icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.wingman-kit-compare__building {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wingman-kit-compare__building-icon {
+  color: var(--agentic-accent, #2d7df6);
+  animation: wingman-kit-compare__building-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes wingman-kit-compare__building-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wingman-kit-compare__sk::after {
+    animation: none;
+    transform: translateX(0);
+    background: linear-gradient(
+      105deg,
+      rgba(255, 255, 255, 0) 28%,
+      rgba(255, 255, 255, 0.32) 50%,
+      rgba(255, 255, 255, 0) 72%
+    );
+  }
+  .wingman-kit-compare__building-icon {
+    animation: none;
+  }
 }
 
 .wingman-kit-compare__caption {
@@ -4586,8 +4802,16 @@ html[data-demo-viewport="mobile"] .wingman-kit-details__actions {
   border-radius: 12px;
 }
 
+.wingman-product-reviews__summary-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a1f;
+}
+
 .wingman-product-reviews__summary-text {
   margin: 0;
+  margin-top: -12px;
   font-size: 13px;
   line-height: 1.5;
   color: #35353b;

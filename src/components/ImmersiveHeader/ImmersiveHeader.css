@@ -19,8 +19,12 @@
   display: flex;
   align-items: center;
   gap: 24px;
-  height: 72px;
-  padding: 24px 64px;
+  /* 18px block padding + a ~36px content row = 72px resolved height.
+   * Driven by padding (not a fixed `height`) so page-level overrides
+   * that retune the vertical padding — e.g. the plan page's slimmer
+   * 12px → 60px header — still win via specificity instead of being
+   * clamped by a hard height on this base rule. */
+  padding: 18px 64px;
   background: #ffffff;
   color: var(--foreground, #17171b);
   font-family: var(--font-family-base);

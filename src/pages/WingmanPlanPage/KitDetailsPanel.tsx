@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkle, X } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { ROUTES, usePrototypeNavigation } from "../../prototypeRoutes";
 import { formatPriceUsd, type Combo } from "./buildPlan";
@@ -77,7 +77,7 @@ export function KitDetailsPanel({
   onBack,
   onClose,
 }: KitDetailsPanelProps) {
-  const { navigate, navigateToProduct } = usePrototypeNavigation();
+  const { navigate } = usePrototypeNavigation();
 
   /* Mode is derived from which prop is populated. `combo` wins when
    * both are provided so callers can't accidentally render a stale
@@ -427,13 +427,29 @@ export function KitDetailsPanel({
                 <div className="wingman-kit-details__product-actions">
                   <button
                     type="button"
-                    className="wingman-plan-page__sidebar-button wingman-plan-page__sidebar-button--secondary"
+                    className="wingman-plan-page__sidebar-button wingman-plan-page__sidebar-button--secondary wingman-kit-details__bundle-cta"
                     onClick={() => {
                       onAddToCustomBundle?.(selected);
                       onClose();
                     }}
                   >
-                    Add to custom bundle
+                    <Sparkle
+                      width={16}
+                      height={16}
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                    Create custom bundle
+                  </button>
+                  <button
+                    type="button"
+                    className="wingman-plan-page__sidebar-button wingman-plan-page__sidebar-button--secondary"
+                    onClick={() => {
+                      navigate(ROUTES.cart);
+                      onClose();
+                    }}
+                  >
+                    Add to cart
                   </button>
                   <button
                     type="button"
@@ -505,49 +521,6 @@ export function KitDetailsPanel({
             ) : null}
           </section>
 
-        </div>
-
-        {/* Footer action row — "Buy now" used to live here too but
-         * has moved up to the header next to the close button. What
-         * remains are the secondary actions (Remove / More details)
-         * that are less time-critical and benefit from the calmer
-         * placement at the bottom of the panel.
-         *
-         * Lives OUTSIDE the scrolling `__body` and as a sibling of it
-         * inside the panel's flex column, so the bar acts as a fixed
-         * footer that's always reachable. Scrolling content stays
-         * inside the body and disappears at the body's bottom edge as
-         * it passes underneath the bar. */}
-        <div className="wingman-kit-details__actions-bar">
-          <div className="wingman-kit-details__actions">
-            {/* "Remove" only makes sense when there's a kit to remove
-             * the item from. Product mode hides it. */}
-            {mode === "kit" ? (
-              <button
-                type="button"
-                className="wingman-plan-page__sidebar-button wingman-plan-page__sidebar-button--secondary"
-                onClick={() => {
-                  /* TODO(phase-2): wire to a per-combo override map on
-                   * the page so removed accessories are dropped from the
-                   * grid + sidebar + total price. The planner is pure
-                   * over the query today, so there's nowhere to record
-                   * the removal yet — see plan note. */
-                }}
-              >
-                Remove
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="wingman-plan-page__sidebar-button wingman-plan-page__sidebar-button--secondary"
-              onClick={() => {
-                navigateToProduct(selected.slug);
-                onClose();
-              }}
-            >
-              More details
-            </button>
-          </div>
         </div>
       </div>
     </>,

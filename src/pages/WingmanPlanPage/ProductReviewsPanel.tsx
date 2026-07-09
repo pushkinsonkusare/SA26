@@ -205,6 +205,7 @@ function ReviewsTab({ product }: { product: CatalogProduct }) {
   return (
     <div className="wingman-product-reviews__reviews">
       <div className="wingman-product-reviews__summary">
+        <h4 className="wingman-product-reviews__summary-title">Quick summary</h4>
         <p className="wingman-product-reviews__summary-text">{summaryText}</p>
         <div className="wingman-product-reviews__summary-metrics">
           <div className="wingman-product-reviews__summary-score">

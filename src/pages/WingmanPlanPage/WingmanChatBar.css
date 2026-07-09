@@ -576,7 +576,11 @@ body:has(.wingman-plan-page__confirm-overlay)
 
 @container viewport (max-width: 768px) {
   .wingman-chat-bar {
-    width: 340px;
+    /* Match the width of `.wingman-plan-page__combos-card`: the main
+     * content column is the `viewport` container (`#root`) minus the
+     * mobile `--main-pad-x` of 16px on each side. `cqw` tracks the
+     * phone-frame preview (430px) and real narrow devices alike. */
+    width: calc(100cqw - 32px);
     max-width: calc(100vw - 24px);
     bottom: 16px;
     padding: 12px;
@@ -679,7 +683,12 @@ body:has(.wingman-plan-page__confirm-overlay)
   min-width: 0;
   padding: 0;
   justify-content: center;
+  /* Push just this action to the far-right edge of the pill rail so it
+   * reads as a distinct "clear everything" control separated from the
+   * product chips rather than the next item in the list. */
+  margin-left: auto;
   color: var(--agentic-foreground, #17171b);
+  border: none;
   cursor: pointer;
   transition:
     background-color 140ms ease,

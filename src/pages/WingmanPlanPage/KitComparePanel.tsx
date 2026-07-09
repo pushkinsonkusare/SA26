@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Plus, Star, X } from "lucide-react";
+import { Check, Plus, Sparkles, Star, X } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { formatPriceUsd } from "./buildPlan";
 import { KitDetailsPanel } from "./KitDetailsPanel";
@@ -152,6 +152,63 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
+/**
+ * Shimmering placeholder shown while the comparison "builds". Mirrors
+ * the real table's geometry (a narrow label column + one column per
+ * compared product, a media/title/price/rating header block, N attribute
+ * rows, and an action footer) so the reveal doesn't shift layout — the
+ * skeleton simply dissolves into the populated table.
+ */
+function ComparisonSkeleton({
+  columns,
+  rows,
+}: {
+  columns: number;
+  rows: number;
+}) {
+  const cols = Array.from({ length: columns });
+  const attrRows = Array.from({ length: rows });
+  return (
+    <div
+      className="wingman-kit-compare__skeleton"
+      style={{ ["--sk-cols" as string]: String(columns) }}
+      aria-hidden="true"
+    >
+      <div className="wingman-kit-compare__sk-head">
+        <span className="wingman-kit-compare__sk-corner" />
+        {cols.map((_, i) => (
+          <div key={i} className="wingman-kit-compare__sk-col">
+            <span className="wingman-kit-compare__sk wingman-kit-compare__sk--img" />
+            <span className="wingman-kit-compare__sk wingman-kit-compare__sk--title" />
+            <span className="wingman-kit-compare__sk wingman-kit-compare__sk--price" />
+            <span className="wingman-kit-compare__sk wingman-kit-compare__sk--rating" />
+          </div>
+        ))}
+      </div>
+      {attrRows.map((_, r) => (
+        <div key={r} className="wingman-kit-compare__sk-row">
+          <span className="wingman-kit-compare__sk wingman-kit-compare__sk--label" />
+          {cols.map((_, c) => (
+            <span
+              key={c}
+              className="wingman-kit-compare__sk wingman-kit-compare__sk--cell"
+            />
+          ))}
+        </div>
+      ))}
+      <div className="wingman-kit-compare__sk-foot">
+        <span className="wingman-kit-compare__sk-corner" />
+        {cols.map((_, i) => (
+          <div key={i} className="wingman-kit-compare__sk-foot-cell">
+            <span className="wingman-kit-compare__sk wingman-kit-compare__sk--btn" />
+            <span className="wingman-kit-compare__sk wingman-kit-compare__sk--icon" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function KitComparePanel({
   products,
   onClose,
@@ -168,6 +225,12 @@ export function KitComparePanel({
    * table via the detail panel's header back button. */
   const [viewProduct, setViewProduct] = useState<CatalogProduct | null>(null);
 
+  /* "Agent is assembling the comparison" phase. Every time a fresh
+   * comparison opens we hold the real table back behind a shimmering
+   * skeleton for a beat so the panel reads as Wingman actively building
+   * the side-by-side rather than the data snapping in instantly. */
+  const [isBuilding, setIsBuilding] = useState(false);
+
   const isOpen = !!products && products.length >= 2;
 
   /* Reset the added-affordance state whenever a fresh comparison opens. */
@@ -176,6 +239,18 @@ export function KitComparePanel({
       setAddedSlugs(new Set());
       setViewProduct(null);
     }
+  }, [isOpen, products]);
+
+  /* Drive the build-up skeleton. Fires on each fresh open (keyed on the
+   * product set) so re-comparing a new selection replays the beat. */
+  useEffect(() => {
+    if (!isOpen) {
+      setIsBuilding(false);
+      return;
+    }
+    setIsBuilding(true);
+    const timer = window.setTimeout(() => setIsBuilding(false), 1400);
+    return () => window.clearTimeout(timer);
   }, [isOpen, products]);
 
   /* Body scroll lock + Esc to close — mirrors KitDetailsPanel so the two
@@ -225,7 +300,22 @@ export function KitComparePanel({
       >
         <header className="wingman-kit-details__header">
           <h2 className="wingman-kit-details__header-title">
-            Compare {products.length} products
+            {isBuilding ? (
+              <span
+                className="wingman-kit-compare__building"
+                aria-live="polite"
+              >
+                <Sparkles
+                  width={16}
+                  height={16}
+                  className="wingman-kit-compare__building-icon"
+                  aria-hidden="true"
+                />
+                Building comparison…
+              </span>
+            ) : (
+              `Compare ${products.length} products`
+            )}
           </h2>
           <div className="wingman-kit-details__header-actions">
             <button
@@ -240,6 +330,12 @@ export function KitComparePanel({
         </header>
 
         <div className="wingman-kit-details__body wingman-kit-compare__body">
+          {isBuilding ? (
+            <ComparisonSkeleton
+              columns={products.length}
+              rows={Math.max(rows.length, 6)}
+            />
+          ) : (
           <table className="wingman-kit-compare__table">
             <caption className="wingman-kit-compare__caption">
               Side-by-side comparison of your selected products
@@ -389,6 +485,7 @@ export function KitComparePanel({
               </tr>
             </tfoot>
           </table>
+          )}
         </div>
       </div>
       {viewProduct ? (
