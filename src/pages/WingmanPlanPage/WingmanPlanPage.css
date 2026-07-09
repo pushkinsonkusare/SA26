@@ -3173,6 +3173,8 @@
   flex-direction: column;
   box-shadow: -16px 0 48px rgba(15, 15, 17, 0.16);
   animation: wingman-kit-details-slide 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Smoothly widen when flipping into image mode. */
+  transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes wingman-kit-details-fade {
@@ -3632,6 +3634,133 @@
 
 .wingman-kit-details__hero-nav--next {
   right: 16px;
+}
+
+/* Expand-to-fullscreen affordance, pinned to the hero's top-right. */
+.wingman-kit-details__hero-expand {
+  appearance: none;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 1px 3px rgba(24, 24, 24, 0.12);
+  color: #17171b;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.wingman-kit-details__hero-expand:hover {
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(24, 24, 24, 0.18);
+}
+
+.wingman-kit-details__hero-expand:focus-visible {
+  outline: 2px solid var(--agentic-focus, rgba(163, 163, 163, 0.5));
+  outline-offset: 2px;
+}
+
+/* ------- Image mode (expanded hero) -------
+ *
+ * The hero expand button flips the whole details panel into an
+ * image-only view: the panel widens to fit a large square image and the
+ * body renders just that image (all detail sections are hidden). The
+ * header keeps a back/collapse affordance to return to the details. */
+.wingman-kit-details--image {
+  width: min(920px, calc(100vw - 48px));
+}
+
+/* Show only the image stage; hide every other body section (summary,
+ * hero block, product details, reviews) so the view is image-only. */
+.wingman-kit-details__body--image {
+  padding: 24px;
+  justify-content: center;
+}
+
+.wingman-kit-details__body--image
+  > *:not(.wingman-kit-details__image-stage) {
+  display: none;
+}
+
+.wingman-kit-details__image-stage {
+  position: relative;
+  /* Don't let flex stretch the square; keep it width-driven. */
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Keep the frame square so the product art sits in a large, balanced
+   * canvas regardless of the source image's aspect ratio. */
+  aspect-ratio: 1 / 1;
+  background: #ffffff;
+  border: 1px solid #e3e3e3;
+  border-radius: 16px;
+  box-shadow: 0 0 41.4px 2px rgba(24, 24, 24, 0.04);
+  overflow: hidden;
+}
+
+.wingman-kit-details__image-full {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 32px;
+  box-sizing: border-box;
+  display: block;
+}
+
+.wingman-kit-details__image-nav {
+  appearance: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(240, 240, 240, 0.92);
+  color: #17171b;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(24, 24, 24, 0.12);
+  transition: background-color 120ms ease;
+}
+
+.wingman-kit-details__image-nav:hover {
+  background: #dcdcdc;
+}
+
+.wingman-kit-details__image-nav:focus-visible {
+  outline: 2px solid var(--agentic-focus, rgba(163, 163, 163, 0.5));
+  outline-offset: 2px;
+}
+
+.wingman-kit-details__image-nav--prev {
+  left: 16px;
+}
+
+.wingman-kit-details__image-nav--next {
+  right: 16px;
+}
+
+/* Hide the agent dock while in image mode so the view stays clean. */
+.wingman-kit-details--image .wingman-kit-details__agent-dock {
+  display: none;
 }
 
 /* Gallery overlays the bottom of the hero image, centered horizontally

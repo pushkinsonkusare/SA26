@@ -293,7 +293,7 @@
   gap: 48px;
   background: #ffffff;
   border: 1px solid #e3e3e3;
-  border-radius: 24px;
+  border-radius: 20px;
   box-shadow: 0 10px 34px rgba(15, 15, 20, 0.08);
   padding: 56px 24px 24px;
 }
@@ -308,7 +308,7 @@
   flex-direction: column;
   justify-content: flex-start;
   align-items: center;
-  gap: 16px;
+  gap: 32px;
 }
 
 .wingman-page__prompt-title {
@@ -358,12 +358,16 @@
  * NB: `--touched` is preserved as a no-op class for backwards
  * compatibility with the existing JSX hook. */
 .wingman-page__input-shell {
+  /* Two-zone composer (ChatGPT/Cursor/Claude pattern): the textarea
+   * owns the top zone and fills top-down, and a dedicated toolbar row
+   * (`+` leading, mic + send trailing) sits pinned to the bottom. This
+   * makes the pill read as a roomy "write a paragraph" compose box
+   * rather than a single-line search field. */
   display: flex;
-  align-items: center;
-  /* 12px gap (was 8) gives the leading `+` real breathing room from
-   * the first word and stops the text block from kissing the mic icon
-   * on long multi-line entries. */
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  /* Vertical gap between the text zone and the toolbar row. */
+  gap: 8px;
   width: 541px;
   height: fit-content;
   /* 12px block padding + 16px inline-start padding (was 8 / 12) lifts
@@ -426,7 +430,24 @@
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  align-items: flex-start;
+}
+
+/* Bottom toolbar row: leading `+` on the left, mic + send grouped on
+ * the right. `space-between` pushes the two groups apart across the
+ * full pill width. */
+.wingman-page__input-toolbar {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Trailing control cluster (mic + send) kept together on the right. */
+.wingman-page__input-toolbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .wingman-page__input {
@@ -435,6 +456,8 @@
   min-width: 0;
   border: 0;
   padding: 0;
+  padding-top: 4px;
+  padding-left: 6px;
   margin: 0;
   background: transparent;
   resize: none;
@@ -455,6 +478,7 @@
   font-size: 14px;
   line-height: 22px;
   color: var(--agentic-foreground, #17171b);
+  height: fit-content;
   /* Single-line look unless the auto-grow JS bumps the height. Cap
    * raised to 132px (6 lines at 22px line-height) to keep parity with
    * the previous ~5-line ceiling now that line-height grew — overflow

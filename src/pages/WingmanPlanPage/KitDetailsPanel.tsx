@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import {
   ChevronLeft,
   ChevronRight,
+  Maximize2,
   MessageSquareText,
+  Minimize2,
   Play,
   Sparkle,
   Star,
@@ -146,6 +148,15 @@ export function KitDetailsPanel({
    * which kit item is on stage. Switching products is reserved for
    * the rail tiles above the hero. */
   const [galleryIndex, setGalleryIndex] = useState(0);
+  /* Whether the hero image is expanded into the full-screen lightbox.
+   * A ref mirror lets the panel's Esc handler close the lightbox first
+   * (one Esc closes the lightbox, the next closes the panel) without
+   * re-running the body-scroll-lock effect. */
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isFullscreenRef = useRef(false);
+  useEffect(() => {
+    isFullscreenRef.current = isFullscreen;
+  }, [isFullscreen]);
 
   /* Reset selection whenever the panel is opened with a fresh combo
    * or product — otherwise re-opening on a different tier would
@@ -174,6 +185,7 @@ export function KitDetailsPanel({
    * land on an invalid index when galleries differ in length. */
   useEffect(() => {
     setGalleryIndex(0);
+    setIsFullscreen(false);
   }, [selectedSlug]);
 
   /* Ref to the gallery <ul> so we can scroll the active thumb into
@@ -224,7 +236,14 @@ export function KitDetailsPanel({
     const original = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      /* First Esc collapses the full-screen image; only close the whole
+       * panel once the lightbox is already dismissed. */
+      if (isFullscreenRef.current) {
+        setIsFullscreen(false);
+        return;
+      }
+      onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -281,7 +300,7 @@ export function KitDetailsPanel({
     );
   };
 
-  const headerTitle = "Details";
+  const headerTitle = isFullscreen ? selected.title : "Details";
   const closeLabel =
     mode === "kit" ? "Close kit details" : "Close product details";
   const dialogLabel = mode === "kit" ? "Kit details" : "Product details";
@@ -321,13 +340,16 @@ export function KitDetailsPanel({
         aria-hidden="true"
       />
       <div
-        className="wingman-kit-details"
+        className={
+          "wingman-kit-details" +
+          (isFullscreen ? " wingman-kit-details--image" : "")
+        }
         role="dialog"
         aria-modal="true"
         aria-label={dialogLabel}
       >
         <header className="wingman-kit-details__header">
-          {onBack ? (
+          {onBack && !isFullscreen ? (
             <button
               type="button"
               className="wingman-kit-details__back"
@@ -337,8 +359,29 @@ export function KitDetailsPanel({
               <ChevronLeft width={16} height={16} aria-hidden="true" />
             </button>
           ) : null}
+          {isFullscreen ? (
+            <button
+              type="button"
+              className="wingman-kit-details__back"
+              onClick={() => setIsFullscreen(false)}
+              aria-label="Back to details"
+            >
+              <ChevronLeft width={16} height={16} aria-hidden="true" />
+            </button>
+          ) : null}
           <h2 className="wingman-kit-details__header-title">{headerTitle}</h2>
           <div className="wingman-kit-details__header-actions">
+            {isFullscreen ? (
+              <button
+                type="button"
+                className="wingman-kit-details__close"
+                onClick={() => setIsFullscreen(false)}
+                aria-label="Collapse image"
+                title="Collapse image"
+              >
+                <Minimize2 width={16} height={16} aria-hidden="true" />
+              </button>
+            ) : null}
             <button
               type="button"
               className="wingman-kit-details__close"
@@ -350,7 +393,42 @@ export function KitDetailsPanel({
           </div>
         </header>
 
-        <div className="wingman-kit-details__body">
+        <div
+          className={
+            "wingman-kit-details__body" +
+            (isFullscreen ? " wingman-kit-details__body--image" : "")
+          }
+        >
+          {isFullscreen && heroSrc ? (
+            <div className="wingman-kit-details__image-stage">
+              <img
+                src={heroSrc}
+                alt={selected.title}
+                className="wingman-kit-details__image-full"
+              />
+              {heroGallery.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    className="wingman-kit-details__image-nav wingman-kit-details__image-nav--prev"
+                    onClick={() => cycleHeroImage(-1)}
+                    aria-label={`Previous image of ${selected.title}`}
+                  >
+                    <ChevronLeft width={22} height={22} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="wingman-kit-details__image-nav wingman-kit-details__image-nav--next"
+                    onClick={() => cycleHeroImage(1)}
+                    aria-label={`Next image of ${selected.title}`}
+                  >
+                    <ChevronRight width={22} height={22} aria-hidden="true" />
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
           {mode === "kit" && combo ? (
             <section className="wingman-kit-details__summary">
               <div className="wingman-kit-details__summary-row">
@@ -428,6 +506,17 @@ export function KitDetailsPanel({
                   />
                 ) : null}
               </div>
+              {heroSrc ? (
+                <button
+                  type="button"
+                  className="wingman-kit-details__hero-expand"
+                  onClick={() => setIsFullscreen(true)}
+                  aria-label={`View ${selected.title} full screen`}
+                  title="View full screen"
+                >
+                  <Maximize2 width={16} height={16} aria-hidden="true" />
+                </button>
+              ) : null}
               {heroGallery.length > 1 ? (
                 <>
                   <button

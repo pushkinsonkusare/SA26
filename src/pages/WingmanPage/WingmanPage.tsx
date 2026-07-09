@@ -91,11 +91,11 @@ const WINGMAN_HERO_IMAGE = activityBannerUrl(FALLBACK_HERO_FILE);
  * index 3 and only appear once the user opts into a refresh. */
 const TOPIC_CARD_POOL: TopicCard[] = [
   {
-    id: "road-cycling",
-    title: "Recommend me gear for road cycling",
-    description: "Lightweight gear to record your ride",
-    query: "Suggest gear for road cycling",
-    imageFile: "Road Bicycle.jpg",
+    id: "mountain-biking",
+    title: "Recommend gear for mountain biking",
+    description: "Rugged gear to capture the trail",
+    query: "Suggest gear for mountain biking",
+    imageFile: "Mountain biking.jpeg",
   },
   {
     id: "yosemite",
@@ -682,17 +682,6 @@ export default function WingmanPage() {
                     handleSubmit();
                   }}
                 >
-                  <button
-                    type="button"
-                    className="wingman-page__input-icon-button"
-                    aria-label="Add attachment"
-                    tabIndex={-1}
-                    disabled
-                    title="Attachments are not yet supported"
-                  >
-                    <Plus width={16} height={16} />
-                  </button>
-
                   <div className="wingman-page__input-textarea-wrap">
                   <textarea
                     ref={inputRef}
@@ -768,6 +757,19 @@ export default function WingmanPage() {
                   />
                   </div>
 
+                  <div className="wingman-page__input-toolbar">
+                  <button
+                    type="button"
+                    className="wingman-page__input-icon-button"
+                    aria-label="Add attachment"
+                    tabIndex={-1}
+                    disabled
+                    title="Attachments are not yet supported"
+                  >
+                    <Plus width={16} height={16} />
+                  </button>
+
+                  <div className="wingman-page__input-toolbar-trailing">
                   <button
                     type="button"
                     className="wingman-page__input-icon-button"
@@ -826,6 +828,8 @@ export default function WingmanPage() {
                       <ArrowRight width={16} height={16} />
                     )}
                   </button>
+                  </div>
+                  </div>
                 </form>
 
                 {showPromptHints && promptHints.length > 0 ? (
