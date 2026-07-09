@@ -10,7 +10,8 @@ import {
 import PrototypeBrandLink from "../PrototypeBrandLink";
 import { useSearchOverlay } from "../SearchOverlay/SearchOverlayContext";
 import { ROUTES, usePrototypeNavigation } from "../../prototypeRoutes";
-import { PRIMARY_NAV_ITEMS, SITE_BRAND } from "../../siteContent";
+import { SITE_BRAND } from "../../siteContent";
+import djiLogo from "../../assets/dji-logo.png";
 import { ImmersiveHeaderMobileSheet } from "./ImmersiveHeaderMobileSheet";
 import "./ImmersiveHeader.css";
 
@@ -41,29 +42,19 @@ export function ImmersiveHeader() {
   return (
     <header className="immersive-header" role="banner">
       <PrototypeBrandLink className="immersive-header__brand">
-        {SITE_BRAND}
+        <img
+          className="immersive-header__brand-logo"
+          src={djiLogo}
+          alt={SITE_BRAND}
+        />
       </PrototypeBrandLink>
 
-      <nav className="immersive-header__nav" aria-label="Primary">
-        {PRIMARY_NAV_ITEMS.map((item) => (
-          <a
-            key={item.label}
-            href={ROUTES.productListing}
-            className={
-              "immersive-header__nav-link" +
-              (item.emphasized ? " immersive-header__nav-link--emphasized" : "")
-            }
-            onClick={(event) => {
-              event.preventDefault();
-              navigate(ROUTES.productListing, {
-                category: item.category ?? null,
-              });
-            }}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
+      {/* Primary category nav is intentionally hidden in the immersive
+       * concept — the empty spacer keeps the Wingman pill + action icons
+       * pushed to the right (the nav used to double as the flex spacer
+       * via `flex: 1 1 0`). Other concepts render their own header, so
+       * this only affects the immersive experience. */}
+      <div className="immersive-header__spacer" aria-hidden="true" />
 
       <button
         type="button"

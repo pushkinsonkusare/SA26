@@ -52,6 +52,11 @@
   --immersive-header-hover-bg: rgba(0, 0, 0, 0.08);
   --immersive-header-press-bg: rgba(0, 0, 0, 0.14);
   --immersive-header-focus-ring: rgba(0, 0, 0, 0.55);
+  /* Slimmer 60px header on the plan page: 12 padding + 36 content row
+   * + 12 padding. Kept in sync with `--header-h` below so the hero's
+   * negative top-margin still lands flush under the header. */
+  padding-top: 12px;
+  padding-bottom: 12px;
   /* Premium hero-over-image treatment: subtle dark glass under nav
    * controls keeps contrast stable across bright sky patches without
    * resorting to text-shadow artifacts. */
@@ -83,12 +88,12 @@
  * Responsive trims below override this at each breakpoint.
  *
  * `--header-h` matches the immersive header's resolved height
- * (24 padding + 36 content row + 24 padding = 84). It's used by
+ * (12 padding + 36 content row + 12 padding = 60). It's used by
  * the hero below to reserve internal space for the header that
  * now floats over it. */
 .wingman-plan-page__main {
   --main-pad-x: 120px;
-  --header-h: 84px;
+  --header-h: 60px;
   display: flex;
   flex-direction: column;
   padding: 0 var(--main-pad-x) 80px;
@@ -133,7 +138,7 @@
    * positioned with `inset: 0`) ignores this padding and bleeds
    * up to the very top of the hero, so the lifestyle banner
    * shows through behind the transparent header. The header's
-   * own height (`--header-h`, 84px) is matched here so back-pill
+   * own height (`--header-h`, 60px) is matched here so back-pill
    * + copy don't slip behind it. */
   padding-top: var(--header-h);
   /* Mirror the cards overlap (`.__cards` margin-top: -400px) so the

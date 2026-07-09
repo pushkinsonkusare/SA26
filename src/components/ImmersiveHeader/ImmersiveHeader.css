@@ -19,6 +19,7 @@
   display: flex;
   align-items: center;
   gap: 24px;
+  height: 72px;
   padding: 24px 64px;
   background: #ffffff;
   color: var(--foreground, #17171b);
@@ -46,6 +47,17 @@ a.prototype-brand-link.immersive-header__brand {
   text-decoration: none;
 }
 
+/* DJI wordmark logo: height-constrained to the brand row so it swaps
+ * in cleanly where the "DJI" text used to sit. `currentColor` tint via
+ * the black source PNG keeps it readable on both the transparent-glass
+ * and scrolled-white header states. */
+.immersive-header__brand-logo {
+  display: block;
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+}
+
 /* Nav row — `flex: 1 1 0` is what pushes the Wingman pill + actions to
  * the far right while still letting nav links wrap if the viewport is
  * narrow (Figma never narrows below ~1280, but defensive is cheap). */
@@ -53,6 +65,14 @@ a.prototype-brand-link.immersive-header__brand {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Spacer that replaces the (now hidden) primary nav in the immersive
+ * concept, preserving the flex-grow that pushes the Wingman pill +
+ * action icons to the right edge. */
+.immersive-header__spacer {
   flex: 1 1 0;
   min-width: 0;
 }
