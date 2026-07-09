@@ -1180,6 +1180,15 @@ const HEADLINE_LEADING_PATTERNS: RegExp[] = [
    * wedding shoot". Followed by an article so we don't accidentally
    * eat verbs that anchor the activity. */
   /^(planning|thinking\s+about|considering|preparing\s+for|getting\s+ready\s+for)\s+(a|an|my|our|the)\s+/i,
+  /* Preference / hobby openers — "i am into mountain biking", "i'm
+   * into drones", "i love hiking", "i enjoy vlogging". These state
+   * the activity but the subject clause is pure filler for a headline. */
+  /^i(\s+am|'?m)\s+into\s+/i,
+  /^i\s+(love|enjoy|like|do)\s+/i,
+  /* Beginner-intent verbs — "start vlogging", "begin drone photography",
+   * "learn to fly". Followed optionally by "to" so "learn to fly"
+   * collapses to "fly". */
+  /^(start|begin|learn|try)\s+(to\s+)?/i,
   /^help\s+me\s+(with\s+)?/i,
   /^show\s+me\s+/i,
   /^build\s+(me\s+)?/i,
@@ -1234,6 +1243,10 @@ const HEADLINE_TRAILING_DEAD_WORDS = new Set([
   "an",
   "my",
   "our",
+  /* Dangling subject pronoun left behind when a trailing clause is
+   * stripped mid-sentence, e.g. "mountain biking, i want to…" →
+   * "mountain biking, i" → "mountain biking". */
+  "i",
 ]);
 
 /* 40 chars ≈ 6 words at typical English word lengths — matches the
@@ -1241,6 +1254,31 @@ const HEADLINE_TRAILING_DEAD_WORDS = new Set([
  * upgrade feel consistent in size. The previous 64-char cap let
  * the heuristic render two-clause sentences. */
 const HEADLINE_MAX_LENGTH = 40;
+
+/* Shopping nouns that mean the distilled phrase already reads as a
+ * "what to buy" headline ("action camera kit", "travel gear"). When
+ * one is present we skip the "Gear for …" wrapper to avoid stutter
+ * like "gear for camera gear". */
+const HEADLINE_SHOPPING_NOUN_RE =
+  /\b(gear|kit|equipment|setup|tech|combo|combos|rig|rigs|bundle|essentials|drone|camera|gimbal|mic|microphone)\b/i;
+
+/**
+ * Frame a distilled activity phrase as a "Gear for {activity}" headline
+ * so the fallback reads like a curated recommendation ("Gear for
+ * mountain biking") instead of a bare fragment ("Mountain biking").
+ *
+ * Skipped — the phrase is returned untouched — when it already:
+ *   • contains an explicit "for" clause ("best drone for vlogging"),
+ *   • names a shopping noun ("action camera", "travel kit"), or
+ *   • is too long (> 5 words) to reframe without reading awkwardly.
+ */
+function ensureGearFraming(phrase: string): string {
+  if (!phrase) return phrase;
+  if (/\bfor\b/i.test(phrase)) return phrase;
+  if (HEADLINE_SHOPPING_NOUN_RE.test(phrase)) return phrase;
+  if (phrase.trim().split(/\s+/).length > 5) return phrase;
+  return `gear for ${phrase}`;
+}
 
 export function shortenQuery(query: string): string {
   let working = query.trim();
@@ -1295,6 +1333,11 @@ export function shortenQuery(query: string): string {
   }
 
   if (!working) return query.trim();
+
+  /* Reframe the bare activity as a "Gear for …" recommendation so the
+   * heuristic fallback reads like a headline, matching the LLM
+   * upgrade's "{thing} for {activity}" template. */
+  working = ensureGearFraming(working);
 
   /* Ellipsize over-long headlines at a word boundary so we don't
    * truncate mid-token. Shoppers can still see the full query in the

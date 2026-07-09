@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
+import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
 import { ROUTES, usePrototypeNavigation } from "../../prototypeRoutes";
 import { formatPriceUsd, type Combo } from "./buildPlan";
 import {
@@ -229,12 +230,14 @@ export function KitDetailsPanel({
     ul.scrollTo({ left: targetLeft, behavior: "smooth" });
   }, [galleryIndex, selectedSlug]);
 
-  /* Body scroll lock + Esc to close. Mirrors the SearchOverlay
-   * pattern — both modal surfaces want the same UX. */
+  /* Body scroll lock — reference-counted so overlapping panels
+   * (reviews / compare opened on top of this one) can't leave the
+   * page scroll frozen depending on close order. */
+  useBodyScrollLock(mode !== "closed");
+
+  /* Esc to close. */
   useEffect(() => {
     if (mode === "closed") return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       /* First Esc collapses the full-screen image; only close the whole
@@ -247,7 +250,6 @@ export function KitDetailsPanel({
     };
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = original;
       document.removeEventListener("keydown", onKey);
     };
   }, [mode, onClose]);

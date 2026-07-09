@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, ExternalLink, LoaderCircle, Star, X } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
+import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 import {
   buildMockReviews,
@@ -295,17 +296,18 @@ export function ProductReviewsPanel({
     }
   }, [isOpen, product, initialTab]);
 
-  /* Body scroll lock + Esc to close — mirrors the sibling panels. */
+  /* Body scroll lock — reference-counted (see useBodyScrollLock) so
+   * layering this over KitDetailsPanel can't freeze page scroll. */
+  useBodyScrollLock(isOpen);
+
+  /* Esc to close — mirrors the sibling panels. */
   useEffect(() => {
     if (!isOpen) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = original;
       document.removeEventListener("keydown", onKey);
     };
   }, [isOpen, onClose]);

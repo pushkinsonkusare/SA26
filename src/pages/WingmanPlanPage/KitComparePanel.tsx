@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Plus, Sparkles, Star, X } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
+import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
 import { formatPriceUsd } from "./buildPlan";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 
@@ -253,18 +254,19 @@ export function KitComparePanel({
     return () => window.clearTimeout(timer);
   }, [isOpen, products]);
 
-  /* Body scroll lock + Esc to close — mirrors KitDetailsPanel so the two
-   * modal surfaces behave identically. */
+  /* Body scroll lock — reference-counted (see useBodyScrollLock) so the
+   * two modal surfaces can overlap without freezing page scroll. */
+  useBodyScrollLock(isOpen);
+
+  /* Esc to close — mirrors KitDetailsPanel so the two modal surfaces
+   * behave identically. */
   useEffect(() => {
     if (!isOpen) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = original;
       document.removeEventListener("keydown", onKey);
     };
   }, [isOpen, onClose]);

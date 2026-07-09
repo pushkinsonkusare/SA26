@@ -1252,7 +1252,7 @@ function WingmanPlanCategories({
       <div className="wingman-plan-page__categories-card">
         <header className="wingman-plan-page__categories-header">
           <h2 className="wingman-plan-page__categories-title">
-            Create your own kit
+            Curated for you
           </h2>
           <p className="wingman-plan-page__categories-subtitle">
             Custom curated items for your need. Select any of these items from
