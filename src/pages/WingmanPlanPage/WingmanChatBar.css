@@ -25,8 +25,8 @@
 
   width: 553px;
   max-width: calc(100vw - 32px);
-  padding: 16px;
-  border-radius: 36px;
+  padding: 8px;
+  border-radius: 32px;
   box-sizing: border-box;
 
   display: flex;
@@ -38,10 +38,10 @@
    * to the rest-state values, then overridden via [data-state].
    * `opacity` / `transform` participate in the transition list so the
    * modal-aware fade rule below animates smoothly. */
-  background: rgba(241, 241, 241, 0.5);
+  background: rgba(240, 240, 240, 0.5);
   border: 1px solid transparent;
-  box-shadow: none;
-  backdrop-filter: blur(18.1px);
+  box-shadow: 0px 4px 20px 0px rgba(0, 0, 0, 0.18);
+  backdrop-filter: none;
 
   transition:
     background-color 200ms ease,
@@ -174,7 +174,7 @@
   padding: 8px;
   padding-left: 12px;
   background: var(--white, #ffffff);
-  border: 1px solid var(--agentic-border, #9ca3af);
+  border: none;
   border-radius: 24px;
   box-sizing: border-box;
   /* Defang the user-agent fieldset/form margins. */
@@ -227,6 +227,17 @@
 .wingman-chat-bar__textarea::placeholder {
   color: #818181;
   opacity: 1;
+}
+
+/* Keep the placeholder (e.g. the long, contextual "Ask me anything
+ * about <product>…") to a single truncated line. Scoped to
+ * `:placeholder-shown` so it ONLY affects the empty/hint state — once
+ * the shopper types, this stops matching and their text wraps and
+ * auto-grows normally. */
+.wingman-chat-bar__textarea:placeholder-shown {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ----------------------------------------------------------------
@@ -548,8 +559,13 @@
  * overlay alike, without prop plumbing.
  * ---------------------------------------------------------------- */
 
-body:has(.wingman-kit-details__backdrop) .wingman-chat-bar,
-body:has(.wingman-plan-page__confirm-overlay) .wingman-chat-bar {
+/* When a kit-details / compare / reviews panel is open, fade out the
+ * FLOATING (viewport) bar. The DOCKED bar is exempt — it lives inside
+ * the panel and is exactly the agent we want visible there. */
+body:has(.wingman-kit-details__backdrop)
+  .wingman-chat-bar:not(.wingman-chat-bar--docked),
+body:has(.wingman-plan-page__confirm-overlay)
+  .wingman-chat-bar:not(.wingman-chat-bar--docked) {
   opacity: 0;
   pointer-events: none;
   /* Slide down a hair as we fade — same `translate(-50%, …)` pattern
@@ -796,6 +812,7 @@ body:has(.wingman-plan-page__confirm-overlay)
   flex-wrap: wrap;
   gap: 8px;
   width: 100%;
+  margin-top: 6px;
   padding: 0 4px;
   box-sizing: border-box;
   animation: wingman-chat-bar__pill-in 180ms cubic-bezier(0.22, 1, 0.36, 1);

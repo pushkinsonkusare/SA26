@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowRight,
   LoaderCircle,
@@ -46,6 +47,11 @@ import {
   removeSelection,
   subscribe as subscribeSelection,
 } from "./wingmanSelectionStore";
+import {
+  getAgentDockLabelSnapshot,
+  getAgentDockSnapshot,
+  subscribeAgentDock,
+} from "./wingmanAgentDockStore";
 import "./WingmanChatBar.css";
 
 /**
@@ -173,6 +179,22 @@ export function WingmanChatBar({
     subscribeSelection,
     getSelectionSnapshot,
     getSelectionSnapshot,
+  );
+  /* When a surface (currently KitDetailsPanel) registers a dock, the bar
+   * teleports into it so the agent "follows the shopper's focus". Null
+   * when nothing is docked → the bar renders in its floating viewport
+   * position as usual. */
+  const dockElement = useSyncExternalStore(
+    subscribeAgentDock,
+    getAgentDockSnapshot,
+    getAgentDockSnapshot,
+  );
+  /* Name of the product/kit the docked surface is focused on, used to
+   * make the input placeholder contextual while docked. */
+  const dockLabel = useSyncExternalStore(
+    subscribeAgentDock,
+    getAgentDockLabelSnapshot,
+    getAgentDockLabelSnapshot,
   );
   /* Brief window between user-message append and assistant-reply
    * append, used to render a "thinking…" indicator in the assistant
@@ -525,7 +547,11 @@ export function WingmanChatBar({
     }
   }, [isListening, isTranscribing, speech]);
 
-  if (!visible) return null;
+  /* Hide only when there's nothing to steer AND we're not docked. When a
+   * panel registers a dock the agent should follow the shopper in even if
+   * the underlying page bar would otherwise be suppressed. */
+  const isDocked = dockElement != null;
+  if (!visible && !isDocked) return null;
 
   /* Show bubbles only when there's a thread AND the auto-collapse
    * hasn't latched it shut. Sending a new message resets
@@ -553,6 +579,12 @@ export function WingmanChatBar({
   else if (isHovered || hasSelection) visualState = "hover";
   else visualState = "rest";
 
+  /* Suggested next actions (NBA chips) are an on-demand affordance: keep
+   * them collapsed while the bar rests, and only reveal them once the
+   * shopper engages the bar (hover, focus/click, an active selection, or
+   * an open thread). Everything but the resting state counts as engaged. */
+  const showNbas = nbas.length > 0 && visualState !== "rest";
+
   let micIcon: ReactNode;
   let micLabel: string;
   if (isTranscribing) {
@@ -576,9 +608,15 @@ export function WingmanChatBar({
 
   /* When a selection exists, hint that the input is now contextual to
    * the picked product(s) so the shopper knows they can ask about them
-   * in natural language. Falls back to the default prompt otherwise. */
+   * in natural language. Falls back to the default prompt otherwise.
+   *
+   * When docked inside a details panel, the product on stage there wins
+   * — the agent has followed the shopper's focus, so its prompt should
+   * name exactly what they're looking at. */
   let contextualPlaceholder = PLACEHOLDER;
-  if (selectedProducts.length === 1) {
+  if (isDocked && dockLabel) {
+    contextualPlaceholder = `Ask me anything about ${dockLabel}\u2026`;
+  } else if (selectedProducts.length === 1) {
     contextualPlaceholder = `Ask about ${selectedProducts[0].title}\u2026`;
   } else if (selectedProducts.length > 1) {
     contextualPlaceholder = `Ask about your ${selectedProducts.length} selected products\u2026`;
@@ -590,9 +628,12 @@ export function WingmanChatBar({
   const waveformScale = 0.45 + clampedAudioLevel * 1.55;
   const waveformBaseProfile = [0.74, 0.58, 1.08, 0.9, 0.68];
 
-  return (
+  const content = (
     <>
-      {hasThread ? (
+      {/* Skip the full-viewport thread backdrop when docked inside a
+       * panel — dimming the whole page (including the panel itself)
+       * would fight the panel's own modal treatment. */}
+      {hasThread && !isDocked ? (
         <div
           className={
             "wingman-chat-bar__backdrop" +
@@ -604,7 +645,9 @@ export function WingmanChatBar({
         />
       ) : null}
       <aside
-        className="wingman-chat-bar"
+        className={
+          "wingman-chat-bar" + (isDocked ? " wingman-chat-bar--docked" : "")
+        }
         data-state={visualState}
         data-collapsing={isCollapsing ? "true" : undefined}
         onMouseEnter={() => setIsHovered(true)}
@@ -769,7 +812,7 @@ export function WingmanChatBar({
           </div>
         ) : null}
 
-        {nbas.length > 0 ? (
+        {showNbas ? (
           <div
             className="wingman-chat-bar__nba"
             role="group"
@@ -806,16 +849,20 @@ export function WingmanChatBar({
             }
           }}
         >
-          <button
-            type="button"
-            className="wingman-chat-bar__icon-button"
-            aria-label="Add attachment"
-            tabIndex={-1}
-            disabled
-            title="Attachments are not yet supported"
-          >
-            <Plus width={16} height={16} />
-          </button>
+          {/* Attachment affordance is hidden in the docked (panel) agent
+           * to reduce clutter — only shown in the full viewport bar. */}
+          {!isDocked ? (
+            <button
+              type="button"
+              className="wingman-chat-bar__icon-button"
+              aria-label="Add attachment"
+              tabIndex={-1}
+              disabled
+              title="Attachments are not yet supported"
+            >
+              <Plus width={16} height={16} />
+            </button>
+          ) : null}
 
           <div className="wingman-chat-bar__textarea-wrap">
             <textarea
@@ -908,4 +955,9 @@ export function WingmanChatBar({
       </aside>
     </>
   );
+
+  /* Docked: render into the panel's dock node so the agent floats at the
+   * bottom of the details panel. Otherwise render in place (fixed,
+   * bottom-center of the viewport). */
+  return isDocked ? createPortal(content, dockElement) : content;
 }

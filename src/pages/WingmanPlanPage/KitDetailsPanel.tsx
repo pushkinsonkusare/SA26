@@ -1,9 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Sparkle, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MessageSquareText,
+  Play,
+  Sparkle,
+  Star,
+  X,
+} from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { ROUTES, usePrototypeNavigation } from "../../prototypeRoutes";
 import { formatPriceUsd, type Combo } from "./buildPlan";
+import {
+  buildMockReviews,
+  summarizeReviews,
+  summarizeReviewsText,
+} from "./buildMockReviews";
+import type { ReviewsTabId } from "./ProductReviewsPanel";
+import {
+  setAgentDock,
+  setAgentDockLabel,
+  setAgentDockProductSlug,
+} from "./wingmanAgentDockStore";
 
 /**
  * Slide-in right panel surfacing a kit's contents — or a single
@@ -59,6 +78,12 @@ type KitDetailsPanelProps = {
   initialSelectedSlug?: string | null;
   /** Optional hook for product mode's "Add to custom bundle" button. */
   onAddToCustomBundle?: (product: CatalogProduct) => void;
+  /** Open the reviews panel for the on-stage product on a specific tab.
+   * When provided, a compact reviews widget renders under the product
+   * description with "user reviews" / "video reviews" shortcuts. Omitted
+   * for nested instances (inside the reviews / compare panels) so the
+   * widget doesn't recurse back into itself. */
+  onViewReviews?: (product: CatalogProduct, tab?: ReviewsTabId) => void;
   /** When provided, the header shows a back button (◀) instead of just
    * the title. Used when the panel is opened on top of another surface
    * (e.g. the compare panel's "View" action) so the shopper can return
@@ -67,6 +92,25 @@ type KitDetailsPanelProps = {
   onClose: () => void;
 };
 
+/** Compact 5-star row for the reviews widget summary. */
+function ReviewStars({ rating }: { rating: number }) {
+  const rounded = Math.round(rating);
+  return (
+    <span className="wingman-kit-details__reviews-stars" aria-hidden="true">
+      {Array.from({ length: 5 }, (_, i) => (
+        <Star
+          key={i}
+          width={13}
+          height={13}
+          className="wingman-kit-details__reviews-star"
+          fill={i < rounded ? "currentColor" : "none"}
+          strokeWidth={i < rounded ? 0 : 1.5}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function KitDetailsPanel({
   combo,
   product,
@@ -74,6 +118,7 @@ export function KitDetailsPanel({
   kitDescription,
   initialSelectedSlug,
   onAddToCustomBundle,
+  onViewReviews,
   onBack,
   onClose,
 }: KitDetailsPanelProps) {
@@ -137,6 +182,15 @@ export function KitDetailsPanel({
    * past-edge thumbs and hide the active one. */
   const galleryRef = useRef<HTMLUListElement>(null);
 
+  /* Register the panel's footer node as the Wingman agent's "dock" so
+   * the floating chat bar teleports in here (see wingmanAgentDockStore).
+   * A callback ref fires with the node on mount and `null` on unmount —
+   * including when the panel closes and the component returns null — so
+   * the agent snaps back to the viewport automatically. */
+  const agentDockRef = useCallback((node: HTMLDivElement | null) => {
+    setAgentDock(node);
+  }, []);
+
   /* Keep the active thumb visible inside the (potentially overflowing)
    * gallery strip. We deliberately AVOID `Element.scrollIntoView` here —
    * even with `block: 'nearest'` it walks up every scroll-container
@@ -178,6 +232,24 @@ export function KitDetailsPanel({
       document.removeEventListener("keydown", onKey);
     };
   }, [mode, onClose]);
+
+  /* Keep the agent's context label in step with whatever product is on
+   * stage so the docked chat placeholder reads "Ask me anything about
+   * <that product>". Clears on close/unmount. */
+  useEffect(() => {
+    if (mode === "closed" || items.length === 0) {
+      setAgentDockLabel(null);
+      setAgentDockProductSlug(null);
+      return;
+    }
+    const current = items.find((p) => p.slug === selectedSlug) ?? items[0];
+    setAgentDockLabel(current?.title ?? null);
+    setAgentDockProductSlug(current?.slug ?? null);
+    return () => {
+      setAgentDockLabel(null);
+      setAgentDockProductSlug(null);
+    };
+  }, [mode, items, selectedSlug]);
 
   if (mode === "closed" || items.length === 0) return null;
 
@@ -222,6 +294,19 @@ export function KitDetailsPanel({
     selected.price != null ? formatPriceUsd(selected.price * 1.15) : "";
   const buyNowLabelPrice =
     mode === "kit" && combo ? formatPriceUsd(combo.totalPrice) : productPrice;
+
+  /* Compact review summary for the widget under the description. Built
+   * from the same deterministic mock set the full reviews panel uses, so
+   * the headline number + blurb stay consistent with what opens when the
+   * shopper taps through. Cheap enough (≈6 synthesized reviews) to derive
+   * inline on render. Only needed when the reviews shortcut is wired up. */
+  const mockReviews = onViewReviews ? buildMockReviews(selected) : [];
+  const reviewStats = onViewReviews
+    ? summarizeReviews(mockReviews, selected)
+    : null;
+  const reviewBlurb = onViewReviews
+    ? summarizeReviewsText(mockReviews, selected)
+    : "";
 
   /* Render via portal to document.body so the panel + backdrop escape
    * the page's stacking contexts. `.wingman-plan-page__cards` (a
@@ -470,6 +555,53 @@ export function KitDetailsPanel({
               </p>
             ) : null}
 
+            {/* Reviews widget — a small summary plus quick jumps into the
+             * full reviews panel (text reviews or video reviews). Only
+             * rendered when the caller wired the reviews shortcut. */}
+            {onViewReviews && reviewStats ? (
+              <div className="wingman-kit-details__reviews">
+                <div className="wingman-kit-details__reviews-summary">
+                  <div className="wingman-kit-details__reviews-score">
+                    <span className="wingman-kit-details__reviews-average">
+                      {reviewStats.average.toFixed(1)}
+                    </span>
+                    <ReviewStars rating={reviewStats.average} />
+                    <span className="wingman-kit-details__reviews-count">
+                      {reviewStats.count} review
+                      {reviewStats.count === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  {reviewBlurb ? (
+                    <p className="wingman-kit-details__reviews-blurb">
+                      {reviewBlurb}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="wingman-kit-details__reviews-actions">
+                  <button
+                    type="button"
+                    className="wingman-kit-details__reviews-button"
+                    onClick={() => onViewReviews(selected, "reviews")}
+                  >
+                    <MessageSquareText
+                      width={15}
+                      height={15}
+                      aria-hidden="true"
+                    />
+                    User reviews
+                  </button>
+                  <button
+                    type="button"
+                    className="wingman-kit-details__reviews-button"
+                    onClick={() => onViewReviews(selected, "videos")}
+                  >
+                    <Play width={15} height={15} aria-hidden="true" />
+                    Video reviews
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {/* Tech details — labelled spec pairs from the catalog row.
              * Rendered as a <dl> so screen readers announce each row as
              * a term/definition pair, and so the visual two-column grid
@@ -522,6 +654,12 @@ export function KitDetailsPanel({
           </section>
 
         </div>
+
+        {/* Dock for the Wingman agent. The floating chat bar portals in
+         * here so the assistant "follows" the shopper into the details
+         * panel. Positioned as an overlay at the bottom of the card via
+         * `.wingman-kit-details__agent-dock` (see WingmanPlanPage.css). */}
+        <div className="wingman-kit-details__agent-dock" ref={agentDockRef} />
       </div>
     </>,
     document.body,

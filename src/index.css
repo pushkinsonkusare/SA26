@@ -105,6 +105,51 @@ body {
   overflow-x: hidden;
 }
 
+/* ------------------------------------------------------------------
+ * Elegant, thin scrollbars (global baseline).
+ *
+ * The default OS/browser scrollbar reads far too heavy for this
+ * design. We slim it to an 8px overlay-style bar with a transparent
+ * track and a soft, rounded translucent thumb that only firms up on
+ * hover — mirroring the treatment used by GitHub, Linear, macOS
+ * overlay scrollbars, etc.
+ *
+ * Firefox uses the standard `scrollbar-width` / `scrollbar-color`
+ * pair; WebKit/Chromium/Edge use the `::-webkit-scrollbar` shadow
+ * parts. Components that intentionally hide their scrollbar (carousels,
+ * rails) override this with more specific selectors, so they win.
+ * ------------------------------------------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(17, 17, 27, 0.28) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(17, 17, 27, 0.28);
+  border-radius: 8px;
+  /* Transparent border creates inset padding so the thumb reads as a
+   * slim pill floating inside the track rather than edge-to-edge. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(17, 17, 27, 0.45);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 html[data-demo-viewport="mobile"] body {
   background: #eceff3;
 }

@@ -33,16 +33,24 @@ import {
  *     only carries aggregate rating/reviewCount) with a rating summary.
  */
 
+/** Which reviews tab opens first. Exported so callers (e.g. the details
+ * panel's reviews widget) can deep-link straight to text or video
+ * reviews. */
+export type ReviewsTabId = "videos" | "reviews";
+
 type ProductReviewsPanelProps = {
   /** Product to show reviews for. Panel is open when non-null. */
   product: CatalogProduct | null;
   onClose: () => void;
+  /** Tab to open on. Defaults to "videos". Re-applied every time a fresh
+   * product opens the panel. */
+  initialTab?: ReviewsTabId;
   /** Optional hook for the in-panel PDP's "Add to custom bundle"
    * button (opened via the product header's arrow). */
   onAddToCustomBundle?: (product: CatalogProduct) => void;
 };
 
-type TabId = "videos" | "reviews";
+type TabId = ReviewsTabId;
 
 function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
   const rounded = Math.round(rating);
@@ -268,23 +276,24 @@ function ReviewsTab({ product }: { product: CatalogProduct }) {
 export function ProductReviewsPanel({
   product,
   onClose,
+  initialTab = "videos",
   onAddToCustomBundle,
 }: ProductReviewsPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("videos");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   /* When true, the product's PDP is shown on top of this panel (opened
    * via the header arrow). Backing out returns to the reviews. */
   const [showPdp, setShowPdp] = useState(false);
 
   const isOpen = !!product;
 
-  /* Reset to the Videos tab (and close any PDP overlay) whenever a
+  /* Reset to the requested tab (and close any PDP overlay) whenever a
    * fresh product opens. */
   useEffect(() => {
     if (isOpen) {
-      setActiveTab("videos");
+      setActiveTab(initialTab);
       setShowPdp(false);
     }
-  }, [isOpen, product]);
+  }, [isOpen, product, initialTab]);
 
   /* Body scroll lock + Esc to close — mirrors the sibling panels. */
   useEffect(() => {

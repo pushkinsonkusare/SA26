@@ -343,6 +343,124 @@ export function answerProductQuestion(
 }
 
 /* ============================================================
+ * Free-text comparison requests
+ * ============================================================
+ *
+ * Powers "compare this with the action 5", "osmo 6 vs pocket 3",
+ * "how does it stack up against the action 4?" typed into the chat.
+ * When a comparison verb is present AND we can resolve the named
+ * product(s) from the catalog, the page opens the side-by-side compare
+ * table instead of answering as text or (worse) steering the plan into
+ * a brand-new combo.
+ */
+
+/* Comparison verbs / phrasings. Deliberately excludes a bare "better"
+ * (too ambiguous with "is this any good?") — an explicit "better than"
+ * still counts. */
+const COMPARE_INTENT =
+  /\b(compare|comparison|compared|versus|vs\.?|difference(s)?|better\s+than|stack(s)?\s+up|side[-\s]?by[-\s]?side)\b/i;
+
+/* Filler dropped before matching the remaining tokens against catalog
+ * product names — the compare verbs themselves plus connectors and
+ * self-references ("this"/"it") that point back at the anchor. */
+const COMPARE_STOPWORDS = new Set([
+  "compare", "comparison", "compared", "versus", "vs", "difference",
+  "differences", "better", "than", "stack", "stacks", "up", "side",
+  "by", "with", "to", "against", "and", "or", "between", "the", "a",
+  "an", "this", "that", "it", "them", "these", "those", "my", "our",
+  "please", "show", "me", "how", "does", "do", "is", "are", "which",
+  "would", "should", "vs.", "dji",
+]);
+
+function compareTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t && !COMPARE_STOPWORDS.has(t));
+}
+
+/* Score how strongly a product's name matches the leftover query
+ * tokens. Numeric/model tokens ("5", "3s") weigh double because they're
+ * what disambiguates siblings ("action 5" vs "action 6"). */
+function scoreProductNameMatch(
+  queryTokens: string[],
+  product: CatalogProduct,
+): number {
+  const nameTokens = new Set(
+    `${product.title} ${product.model ?? ""} ${product.series ?? ""}`
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean),
+  );
+  let score = 0;
+  for (const token of queryTokens) {
+    if (nameTokens.has(token)) score += /\d/.test(token) ? 2 : 1;
+  }
+  return score;
+}
+
+/**
+ * Detect a comparison request and resolve the products to compare.
+ *
+ * Returns the ordered list to hand to the compare panel (the anchor
+ * product the shopper is looking at, followed by the named competitor)
+ * when both a comparison verb and a resolvable target are present, or
+ * `null` when the message isn't a comparison. `unresolved` is set when a
+ * comparison verb IS present but we couldn't match a target — the caller
+ * can then prompt for a name instead of dropping into the steering path.
+ */
+export function detectComparisonRequest(
+  question: string,
+  anchors: CatalogProduct[],
+  catalog: CatalogProduct[],
+): { products: CatalogProduct[] | null; unresolved: boolean } {
+  if (!COMPARE_INTENT.test(question)) {
+    return { products: null, unresolved: false };
+  }
+
+  const anchorSlugs = new Set(anchors.map((p) => p.slug));
+  const anchorTypes = new Set(anchors.map((p) => p.productType));
+  const tokens = compareTokens(question);
+
+  const scored = catalog
+    .filter((p) => !anchorSlugs.has(p.slug))
+    .map((p) => ({ p, score: scoreProductNameMatch(tokens, p) }))
+    .filter((x) => x.score >= 2)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      /* Same score: prefer a product of the same kind as the anchor so
+       * "osmo 5" next to an action cam resolves to the Action 5, not a
+       * same-numbered product from another category. */
+      const aAffinB = anchorTypes.has(b.p.productType) ? 1 : 0;
+      const aAffinA = anchorTypes.has(a.p.productType) ? 1 : 0;
+      if (aAffinA !== aAffinB) return aAffinB - aAffinA;
+      return (b.p.rating ?? 0) - (a.p.rating ?? 0);
+    });
+
+  const named: CatalogProduct[] = [];
+  for (const { p } of scored) {
+    if (named.length >= 2) break;
+    if (!named.some((n) => n.slug === p.slug)) named.push(p);
+  }
+
+  if (named.length === 0) {
+    /* Verb present, no target found — surface as "unresolved" only when
+     * there's an anchor to compare against; otherwise it wasn't really
+     * an actionable comparison. */
+    return { products: null, unresolved: anchors.length > 0 };
+  }
+
+  const products: CatalogProduct[] = [];
+  for (const p of [...anchors, ...named]) {
+    if (!products.some((x) => x.slug === p.slug)) products.push(p);
+  }
+  if (products.length < 2) return { products: null, unresolved: anchors.length > 0 };
+  return { products: products.slice(0, 3), unresolved: false };
+}
+
+/* ============================================================
  * Resolver
  * ============================================================ */
 

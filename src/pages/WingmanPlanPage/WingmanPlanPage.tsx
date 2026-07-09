@@ -47,14 +47,20 @@ import { useKitRationales } from "./useKitRationales";
 import type { KitRationale } from "./kitRationale";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 import { KitComparePanel } from "./KitComparePanel";
-import { ProductReviewsPanel } from "./ProductReviewsPanel";
+import { ProductReviewsPanel, type ReviewsTabId } from "./ProductReviewsPanel";
 import { WingmanChatBar } from "./WingmanChatBar";
 import { buildCustomCombo } from "./buildCustomCombo";
 import {
   answerProductQuestion,
+  buildProductFaqs,
+  detectComparisonRequest,
   isProductQuestion,
   resolveSelectionNbas,
 } from "./wingmanNba";
+import {
+  getAgentDockProductSlugSnapshot,
+  subscribeAgentDock,
+} from "./wingmanAgentDockStore";
 import type { KitAccessory } from "./parseKitCommands";
 import { buildAccessoryBundle } from "../../components/SidecarAssistant/conversation/flow";
 import {
@@ -451,6 +457,9 @@ type WingmanPlanCombosProps = {
   onResetKit: (tier: ComboTier) => void;
   /* Remove the custom bundle/tab entirely. */
   onDeleteCustom: () => void;
+  /* Open the reviews panel for a product, on a given tab. Threaded into
+   * the kit-details panel's reviews widget. */
+  onViewReviews: (product: CatalogProduct, tab?: ReviewsTabId) => void;
 };
 
 function WingmanPlanCombos({
@@ -467,6 +476,7 @@ function WingmanPlanCombos({
   removedAccessories,
   onResetKit,
   onDeleteCustom,
+  onViewReviews,
 }: WingmanPlanCombosProps) {
   const { navigate } = usePrototypeNavigation();
   const activeCombo = combos.find((c) => c.id === active) ?? combos[0];
@@ -587,6 +597,7 @@ function WingmanPlanCombos({
           detailsCombo ? getTierKitDescription(detailsCombo.id, isAudioFirstIntent) : ""
         }
         initialSelectedSlug={detailsSelectedSlug}
+        onViewReviews={onViewReviews}
         onClose={() => {
           setDetailsCombo(null);
           setDetailsSelectedSlug(null);
@@ -1205,11 +1216,15 @@ function ProductTileImage({
 type WingmanPlanCategoriesProps = {
   categories: CategoryAccordion[];
   onAddToCustomBundle: (product: CatalogProduct) => void;
+  /* Open the reviews panel for a product, on a given tab. Threaded into
+   * the kit-details panel's reviews widget. */
+  onViewReviews: (product: CatalogProduct, tab?: ReviewsTabId) => void;
 };
 
 function WingmanPlanCategories({
   categories,
   onAddToCustomBundle,
+  onViewReviews,
 }: WingmanPlanCategoriesProps) {
   /* Single source of truth for which accordion is expanded — null
    * means all collapsed. Lifting state here (rather than using the
@@ -1273,6 +1288,7 @@ function WingmanPlanCategories({
       <KitDetailsPanel
         product={selectedProduct}
         onAddToCustomBundle={onAddToCustomBundle}
+        onViewReviews={onViewReviews}
         onClose={() => setSelectedProduct(null)}
       />
     </section>
@@ -2234,9 +2250,19 @@ export default function WingmanPlanPage() {
 
   /* Product whose reviews panel (YouTube videos + text reviews) is
    * open. Null when the panel is closed. Opened by the "View reviews"
-   * selection NBA. */
+   * selection NBA and by the details panel's reviews widget. */
   const [reviewsProduct, setReviewsProduct] = useState<CatalogProduct | null>(
     null,
+  );
+  /* Which tab the reviews panel opens on. The details-panel widget deep
+   * links to "reviews" (text) or "videos"; the NBA keeps the default. */
+  const [reviewsTab, setReviewsTab] = useState<ReviewsTabId>("videos");
+  const openReviews = useCallback(
+    (product: CatalogProduct, tab: ReviewsTabId = "videos") => {
+      setReviewsTab(tab);
+      setReviewsProduct(product);
+    },
+    [],
   );
 
   /* Append the shopper's NBA question immediately, then the templated
@@ -2258,15 +2284,49 @@ export default function WingmanPlanPage() {
    * one combined reply with a labeled answer per product. */
   const resolveSelectionAnswer = useCallback(
     (question: string): string | null => {
-      if (!isProductQuestion(question)) return null;
-      const resolved = selectedProducts
+      /* Resolve the product(s) the shopper is focused on: the docked
+       * details-panel product wins (it's what they're looking at), else
+       * the checkbox selection. Read the dock slug at call time so it
+       * always reflects the currently open panel. */
+      const dockedSlug = getAgentDockProductSlugSnapshot();
+      const dockedProduct = dockedSlug
+        ? products.find((p) => p.slug === dockedSlug) ?? null
+        : null;
+      const selectionResolved = selectedProducts
         .map((p) => products.find((cp) => cp.slug === p.slug))
         .filter((p): p is CatalogProduct => Boolean(p));
-      if (resolved.length === 0) return null;
-      if (resolved.length === 1) {
-        return answerProductQuestion(resolved[0], question);
+      const focusProducts = dockedProduct ? [dockedProduct] : selectionResolved;
+
+      /* Comparison intent ("compare this with the action 5", "osmo 6 vs
+       * pocket 3"). Checked BEFORE the question gate so imperative
+       * phrasings ("compare with action 5") still trigger it. When we can
+       * resolve the named competitor, open the side-by-side table with the
+       * focus product + that competitor and acknowledge in chat. */
+      const comparison = detectComparisonRequest(
+        question,
+        focusProducts,
+        products,
+      );
+      if (comparison.products) {
+        setCompareProducts(comparison.products);
+        const [anchor, ...others] = comparison.products;
+        const otherNames =
+          others.length === 1
+            ? `the ${others[0].title}`
+            : others.map((p) => p.title).join(", ");
+        return `Opening a side-by-side comparison of the ${anchor.title} and ${otherNames}.`;
       }
-      return resolved
+      if (comparison.unresolved) {
+        const anchorName = focusProducts[0]?.title ?? "this product";
+        return `I can compare the ${anchorName} against another product — which one would you like to see it next to?`;
+      }
+
+      if (!isProductQuestion(question)) return null;
+      if (focusProducts.length === 0) return null;
+      if (focusProducts.length === 1) {
+        return answerProductQuestion(focusProducts[0], question);
+      }
+      return focusProducts
         .map((p) => `${p.title}: ${answerProductQuestion(p, question)}`)
         .join("\n\n");
     },
@@ -2369,7 +2429,7 @@ export default function WingmanPlanPage() {
         addToKit: handleAddToKit,
         swapForBetter: handleSwapForBetter,
         compareProducts: setCompareProducts,
-        viewReviews: setReviewsProduct,
+        viewReviews: openReviews,
       },
     );
   }, [
@@ -2380,7 +2440,40 @@ export default function WingmanPlanPage() {
     handleRemoveFromKitAndUntick,
     handleAddToKit,
     handleSwapForBetter,
+    openReviews,
   ]);
+
+  /* Slug of the product currently on stage in the docked surface
+   * (KitDetailsPanel). When set, the chat bar is docked and focused on a
+   * single product, so its NBA row should surface that product's own
+   * contextual FAQs rather than the (checkbox) selection actions. */
+  const dockProductSlug = useSyncExternalStore(
+    subscribeAgentDock,
+    getAgentDockProductSlugSnapshot,
+    getAgentDockProductSlugSnapshot,
+  );
+
+  /* Contextual FAQ chips for the docked product — the first three rules
+   * that apply, each tapping through to a templated Wingman answer in the
+   * chat thread. Empty when nothing is docked. */
+  const dockedProductNbas = useMemo(() => {
+    if (!dockProductSlug) return [];
+    const product = products.find((p) => p.slug === dockProductSlug);
+    if (!product) return [];
+    return buildProductFaqs(product)
+      .slice(0, 3)
+      .map((faq) => ({
+        id: `dock-faq-${product.slug}-${faq.id}`,
+        label: faq.question,
+        run: () => askInChat(faq.question, faq.answer),
+      }));
+  }, [dockProductSlug, products, askInChat]);
+
+  /* When docked on a product, the product's FAQs take precedence over the
+   * selection NBAs so the agent stays contextual to what the shopper is
+   * looking at in the panel. */
+  const chatBarNbas =
+    dockedProductNbas.length > 0 ? dockedProductNbas : selectionNbas;
 
   const handleImmediateChatRemove = useCallback(
     (slugs: string[]) => {
@@ -2486,10 +2579,12 @@ export default function WingmanPlanPage() {
                   removedAccessories={removedAccessories}
                   onResetKit={handleResetKit}
                   onDeleteCustom={handleDeleteCustomBundle}
+                  onViewReviews={openReviews}
                 />
                 <WingmanPlanCategories
                   categories={plan.categories}
                   onAddToCustomBundle={handleAddToCustomBundle}
+                  onViewReviews={openReviews}
                 />
               </div>
             ) : (
@@ -2521,7 +2616,7 @@ export default function WingmanPlanPage() {
         onAcceptBundleSuggestions={handleAcceptProactiveSuggestions}
         onDeclineBundleSuggestions={handleDeclineProactiveSuggestions}
         onAskAboutSelection={resolveSelectionAnswer}
-        nbas={selectionNbas}
+        nbas={chatBarNbas}
       />
       {/* Side-by-side comparison — a routine, non-chat surface opened by
        * the "Compare these" selection NBA. Reuses the KitDetailsPanel
@@ -2539,6 +2634,7 @@ export default function WingmanPlanPage() {
        * shared body:has(...) rule). YouTube videos + text reviews. */}
       <ProductReviewsPanel
         product={reviewsProduct}
+        initialTab={reviewsTab}
         onClose={() => setReviewsProduct(null)}
         onAddToCustomBundle={handleAddToCustomBundle}
       />
