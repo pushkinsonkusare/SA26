@@ -23,6 +23,20 @@
  */
 
 .wingman-plan-page {
+  /* Cap content at `--content-max-w` and center it on wide screens
+   * instead of letting content stretch edge-to-edge. The gutter grows
+   * once the viewport passes `--content-max-w + 240px` (= 1600px), which
+   * is exactly where the responsive trim below hands off to 80px — so
+   * the two rules meet continuously at 1600px and the landing/plan
+   * surfaces share the same gutter (and left edge) on large screens.
+   * Only affects viewports > 1600px; at/below 1600px the media queries
+   * below take over.
+   *
+   * Defined on the page ROOT (not `__main`) so the ImmersiveHeader —
+   * which lives outside `__main` — can consume the exact same gutter and
+   * keep its brand/actions aligned to the card column on every width. */
+  --content-max-w: 1360px;
+  --main-pad-x: max(120px, (100vw - var(--content-max-w)) / 2);
   background-color: rgba(248, 249, 250, 1);
   color: #17171b;
   font-family: var(--font-family-base);
@@ -57,6 +71,13 @@
    * negative top-margin still lands flush under the header. */
   padding-top: 12px;
   padding-bottom: 12px;
+  /* Match the card column's adaptive gutter (inherited from the page
+   * root) so the brand + Wingman pill + actions align to the same left
+   * and right edges as `.__cards` on every width — including widescreen,
+   * where the gutter grows to keep content centered at `--content-max-w`
+   * instead of the header running edge-to-edge past the cards. */
+  padding-left: var(--main-pad-x);
+  padding-right: var(--main-pad-x);
   /* Premium hero-over-image treatment: subtle dark glass under nav
    * controls keeps contrast stable across bright sky patches without
    * resorting to text-shadow artifacts. */
@@ -92,7 +113,10 @@
  * the hero below to reserve internal space for the header that
  * now floats over it. */
 .wingman-plan-page__main {
-  --main-pad-x: 120px;
+  /* `--content-max-w` / `--main-pad-x` are inherited from the page root
+   * (`.wingman-plan-page`) so the header and main share one gutter. The
+   * full-bleed hero is unaffected (bleeds via negative margins of
+   * `--main-pad-x`). */
   --header-h: 60px;
   display: flex;
   flex-direction: column;
@@ -2451,7 +2475,7 @@
  * ============================================================ */
 
 @media (max-width: 1600px) {
-  .wingman-plan-page__main {
+  .wingman-plan-page {
     --main-pad-x: 80px;
   }
 
@@ -2487,8 +2511,11 @@
     margin-top: -160px;
   }
 
-  .wingman-plan-page__main {
+  .wingman-plan-page {
     --main-pad-x: 32px;
+  }
+
+  .wingman-plan-page__main {
     padding: 0 var(--main-pad-x) 64px;
   }
 
@@ -2560,8 +2587,11 @@
 /* Container query so the mosaic-to-2-col reflow fires inside the
  * simulated phone frame too — same reason as the 1280px rule above. */
 @container viewport (max-width: 800px) {
-  .wingman-plan-page__main {
+  .wingman-plan-page {
     --main-pad-x: 16px;
+  }
+
+  .wingman-plan-page__main {
     padding: 0 var(--main-pad-x) 48px;
   }
 
@@ -3151,6 +3181,14 @@
    * isn't trapped in any page stacking context. */
   z-index: 1100;
   animation: wingman-kit-details-fade 180ms ease-out;
+}
+
+/* A reviews/compare panel stacked over an open Details panel reuses the
+ * Details backdrop for the single dim; its own backdrop stays as a
+ * transparent click-catcher so the dim never doubles. */
+.wingman-kit-details__backdrop--nested {
+  background: transparent;
+  animation: none;
 }
 
 .wingman-kit-details {

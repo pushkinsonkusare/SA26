@@ -66,7 +66,17 @@
  * both surfaces — moving between the landing hero and the plan hero
  * never shifts the left edge of the headline. */
 .wingman-page__main {
-  --main-pad-x: 120px;
+  /* Content is capped at `--content-max-w` and centered on wide
+   * screens (Apple-store style): the gutter holds at 120px until the
+   * viewport is wide enough that content would exceed the cap, then
+   * grows so the content column stays centered instead of stretching
+   * edge-to-edge. Crossover happens at `--content-max-w + 240px`
+   * (= 1600px), which also matches the plan page's 1600px breakpoint
+   * so the two surfaces' left edges stay aligned on large screens.
+   * The full-bleed hero banner is unaffected — it bleeds via negative
+   * margins of `--main-pad-x`, so it always spans the full width. */
+  --content-max-w: 1360px;
+  --main-pad-x: max(120px, (100vw - var(--content-max-w)) / 2);
   --header-h: 72px;
   display: flex;
   flex-direction: column;
@@ -279,15 +289,17 @@
  * explicit: if hero padding-top is ever retuned, the prompt's anchor
  * automatically tracks viewport 453 without manual re-math.
  *
- * Using `left: 120px` + `right: 120px` (instead of `width: 100%`)
+ * Using `left`/`right: var(--main-pad-x)` (instead of `width: 100%`)
  * makes the card stretch to exactly the same content-area width as
  * the combos-card no matter the viewport size, since both pages
- * share `--main-pad-x: 120px`. */
+ * share `--main-pad-x`. Pinning to the gutter variable (rather than a
+ * literal 120px) means the card follows the centered, max-width
+ * content column on wide screens instead of stretching to the edges. */
 .wingman-page__prompt {
   position: absolute;
   top: calc(453px - var(--header-h) - 59px);
-  left: 120px;
-  right: 120px;
+  left: var(--main-pad-x);
+  right: var(--main-pad-x);
   display: flex;
   flex-direction: column;
   gap: 48px;

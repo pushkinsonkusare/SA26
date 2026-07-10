@@ -1,8 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, ExternalLink, LoaderCircle, Star, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  LoaderCircle,
+  Star,
+  X,
+} from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
+import {
+  getAgentDockSnapshot,
+  subscribeAgentDock,
+} from "./wingmanAgentDockStore";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 import {
   buildMockReviews,
@@ -287,6 +298,19 @@ export function ProductReviewsPanel({
 
   const isOpen = !!product;
 
+  /* Whether a KitDetailsPanel is currently open beneath this panel. The
+   * details panel registers a dock node for its whole open lifetime, so a
+   * non-null dock means we're layered on top of it (opened from the
+   * details panel's "Video reviews" widget, or via the docked chat). When
+   * stacked we reuse the details panel's backdrop for the single dim and
+   * swap our Close (X) for a Back arrow that returns to it. */
+  const detailsOpen = useSyncExternalStore(
+    subscribeAgentDock,
+    () => getAgentDockSnapshot() !== null,
+    () => false,
+  );
+  const stacked = isOpen && detailsOpen;
+
   /* Reset to the requested tab (and close any PDP overlay) whenever a
    * fresh product opens. */
   useEffect(() => {
@@ -317,7 +341,10 @@ export function ProductReviewsPanel({
   return createPortal(
     <>
       <div
-        className="wingman-kit-details__backdrop"
+        className={
+          "wingman-kit-details__backdrop" +
+          (stacked ? " wingman-kit-details__backdrop--nested" : "")
+        }
         onClick={onClose}
         aria-hidden="true"
       />
@@ -328,16 +355,28 @@ export function ProductReviewsPanel({
         aria-label={`Reviews for ${product.title}`}
       >
         <header className="wingman-kit-details__header">
-          <h2 className="wingman-kit-details__header-title">Reviews</h2>
-          <div className="wingman-kit-details__header-actions">
+          {stacked ? (
             <button
               type="button"
-              className="wingman-kit-details__close"
+              className="wingman-kit-details__back"
               onClick={onClose}
-              aria-label="Close reviews"
+              aria-label="Back to details"
             >
-              <X width={16} height={16} aria-hidden="true" />
+              <ArrowLeft width={16} height={16} aria-hidden="true" />
             </button>
+          ) : null}
+          <h2 className="wingman-kit-details__header-title">Reviews</h2>
+          <div className="wingman-kit-details__header-actions">
+            {stacked ? null : (
+              <button
+                type="button"
+                className="wingman-kit-details__close"
+                onClick={onClose}
+                aria-label="Close reviews"
+              >
+                <X width={16} height={16} aria-hidden="true" />
+              </button>
+            )}
           </div>
         </header>
 

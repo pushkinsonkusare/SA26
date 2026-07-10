@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { Check, Plus, Sparkles, Star, X } from "lucide-react";
+import { ArrowLeft, Check, Plus, Sparkles, Star, X } from "lucide-react";
 import type { CatalogProduct } from "../../catalog/catalog";
 import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
 import { formatPriceUsd } from "./buildPlan";
+import {
+  getAgentDockSnapshot,
+  subscribeAgentDock,
+} from "./wingmanAgentDockStore";
 import { KitDetailsPanel } from "./KitDetailsPanel";
 
 /**
@@ -234,6 +238,17 @@ export function KitComparePanel({
 
   const isOpen = !!products && products.length >= 2;
 
+  /* Whether a KitDetailsPanel is open beneath this panel (it registers a
+   * dock node for its whole open lifetime). When stacked we reuse the
+   * details panel's backdrop for the single dim and swap our Close (X)
+   * for a Back arrow that returns to it. */
+  const detailsOpen = useSyncExternalStore(
+    subscribeAgentDock,
+    () => getAgentDockSnapshot() !== null,
+    () => false,
+  );
+  const stacked = isOpen && detailsOpen;
+
   /* Reset the added-affordance state whenever a fresh comparison opens. */
   useEffect(() => {
     if (isOpen) {
@@ -290,7 +305,10 @@ export function KitComparePanel({
   return createPortal(
     <>
       <div
-        className="wingman-kit-details__backdrop"
+        className={
+          "wingman-kit-details__backdrop" +
+          (stacked ? " wingman-kit-details__backdrop--nested" : "")
+        }
         onClick={onClose}
         aria-hidden="true"
       />
@@ -301,6 +319,16 @@ export function KitComparePanel({
         aria-label="Compare products"
       >
         <header className="wingman-kit-details__header">
+          {stacked ? (
+            <button
+              type="button"
+              className="wingman-kit-details__back"
+              onClick={onClose}
+              aria-label="Back to details"
+            >
+              <ArrowLeft width={16} height={16} aria-hidden="true" />
+            </button>
+          ) : null}
           <h2 className="wingman-kit-details__header-title">
             {isBuilding ? (
               <span
@@ -320,14 +348,16 @@ export function KitComparePanel({
             )}
           </h2>
           <div className="wingman-kit-details__header-actions">
-            <button
-              type="button"
-              className="wingman-kit-details__close"
-              onClick={onClose}
-              aria-label="Close comparison"
-            >
-              <X width={16} height={16} aria-hidden="true" />
-            </button>
+            {stacked ? null : (
+              <button
+                type="button"
+                className="wingman-kit-details__close"
+                onClick={onClose}
+                aria-label="Close comparison"
+              >
+                <X width={16} height={16} aria-hidden="true" />
+              </button>
+            )}
           </div>
         </header>
 
