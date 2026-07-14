@@ -567,6 +567,28 @@ export function findBetterVersion(
   return scored[0].c;
 }
 
+/* A stable "product family" key for compare-eligibility. Two selections
+ * are compare-worthy only when they map to the same key — a cross-family
+ * comparison (e.g. an action camera vs a helmet mount) shares almost no
+ * specs and yields an all-"—" table, so we suppress it.
+ *
+ * Cores bucket by imaging group (`productTypeGroup` is always populated,
+ * so two action cameras always match). Accessories bucket by their
+ * subtype family prefix — `mount_helmet`/`mount_handlebar` -> `mount`,
+ * `mic_wireless`/`mic_kit` -> `mic` — so two mounts compare but a mic vs
+ * a mount does not (the `accessoryRole` alone is often unset for these,
+ * collapsing everything to "general"). Falls back to `accessoryRole`,
+ * then a generic bucket, when a SKU ships no subtype. */
+function compareFamilyKey(p: CatalogProduct): string {
+  if (p.isAccessory || p.productTypeGroup === "accessory") {
+    const sub = p.subtypes.find((s) => s.includes("_"));
+    if (sub) return `accessory:${sub.slice(0, sub.indexOf("_"))}`;
+    if (p.accessoryRole) return `accessory:role:${p.accessoryRole}`;
+    return "accessory:general";
+  }
+  return `core:${p.productTypeGroup || p.productType || "unknown"}`;
+}
+
 /**
  * Resolve the Next Best Actions for the current selection. Returns an
  * ordered list of tappable items (empty when nothing is selected).
@@ -700,14 +722,31 @@ export function resolveSelectionNbas(
 
   /* Browsing selection — comparison is a routine feature, so it opens
    * the dedicated tabular compare panel rather than the chat thread.
-   * Same-category picks compare cleanly on shared specs; mixed-category
-   * picks still compare on universal attributes (price, rating, tier,
-   * category), so we offer "Compare these" in both cases. */
-  return [
-    {
-      id: "compare",
-      label: "Compare these",
-      run: () => deps.compareProducts(products),
-    },
-  ];
+   * Only offer it when the picks are the same product family: a
+   * cross-family comparison (e.g. an action camera vs a helmet mount)
+   * shares almost no specs and renders an all-"—" table. */
+  const sameFamily = new Set(products.map(compareFamilyKey)).size === 1;
+  if (sameFamily) {
+    return [
+      {
+        id: "compare",
+        label: "Compare these",
+        run: () => deps.compareProducts(products),
+      },
+    ];
+  }
+
+  /* Not comparable (e.g. camera + mount) — let the shopper add the
+   * browsed picks to the kit instead of forcing an empty comparison. */
+  const addable = products.filter((p) => !inKit(p));
+  if (addable.length > 0) {
+    return [
+      {
+        id: "add-these",
+        label: "Add these to kit",
+        run: () => addable.forEach((p) => deps.addToKit(p.slug)),
+      },
+    ];
+  }
+  return [];
 }
