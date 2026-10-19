@@ -10,7 +10,7 @@ import {
 import PrototypeBrandLink from "../PrototypeBrandLink";
 import { useSearchOverlay } from "../SearchOverlay/SearchOverlayContext";
 import { ROUTES, usePrototypeNavigation } from "../../prototypeRoutes";
-import { SITE_BRAND } from "../../siteContent";
+import { PRIMARY_NAV_ITEMS, SITE_BRAND } from "../../siteContent";
 import djiLogo from "../../assets/dji-logo.png";
 import { ImmersiveHeaderMobileSheet } from "./ImmersiveHeaderMobileSheet";
 import "./ImmersiveHeader.css";
@@ -23,9 +23,6 @@ import "./ImmersiveHeader.css";
  * Scope: only mounted by callers that have already gated on
  * `useAgentMode().mode === "immersive"`. Every selector below is namespaced
  * `.immersive-header*` so it cannot bleed into the other three modes.
- *
- * Wingman + the right-side sparkle shortcut are intentional no-ops in v1;
- * they'll wire to the immersive assistant surface once that exists.
  */
 export function ImmersiveHeader() {
   const { navigate } = usePrototypeNavigation();
@@ -39,6 +36,10 @@ export function ImmersiveHeader() {
     navigate(ROUTES.wingman);
   };
 
+  const handleNav = (category: string | null) => {
+    navigate(ROUTES.productListing, { category });
+  };
+
   return (
     <header className="immersive-header" role="banner">
       <PrototypeBrandLink className="immersive-header__brand">
@@ -49,12 +50,21 @@ export function ImmersiveHeader() {
         />
       </PrototypeBrandLink>
 
-      {/* Primary category nav is intentionally hidden in the immersive
-       * concept — the empty spacer keeps the Wingman pill + action icons
-       * pushed to the right (the nav used to double as the flex spacer
-       * via `flex: 1 1 0`). Other concepts render their own header, so
-       * this only affects the immersive experience. */}
-      <div className="immersive-header__spacer" aria-hidden="true" />
+      <nav className="immersive-header__nav" aria-label="Primary">
+        {PRIMARY_NAV_ITEMS.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            className={
+              "immersive-header__nav-link" +
+              (item.emphasized ? " immersive-header__nav-link--emphasized" : "")
+            }
+            onClick={() => handleNav(item.category ?? null)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
       <button
         type="button"

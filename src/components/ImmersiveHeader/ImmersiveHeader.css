@@ -73,15 +73,12 @@ a.prototype-brand-link.immersive-header__brand {
   min-width: 0;
 }
 
-/* Spacer that replaces the (now hidden) primary nav in the immersive
- * concept, preserving the flex-grow that pushes the Wingman pill +
- * action icons to the right edge. */
-.immersive-header__spacer {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
 .immersive-header__nav-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   height: 36px;
